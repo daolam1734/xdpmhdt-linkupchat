@@ -1,0 +1,32 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Docker
+.dockerignore
+
+# Frontend
+node_modules/
+dist/
+build/
+.DS_Store
+
+# Static/Uploads (Local only)
+backend/static/*
+backend/uploads/*
+!backend/static/.gitkeep
+!backend/uploads/.gitkeep
+
+# IDEs
+.vscode/
+.idea/
