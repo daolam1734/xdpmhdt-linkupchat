@@ -1,0 +1,492 @@
+import { create } from 'zustand';
+import type { Message, Room } from '../types/chat';
+import { chatService } from '../services/chat.service';
+
+interface ChatState {
+    rooms: Room[];
+    activeRoom: Room | null;
+    messages: Message[];
+    isConnected: boolean;
+    socket: WebSocket | null;
+    isLoading: boolean;
+    aiSuggestion: { content: string, messageId: string, isStreaming: boolean } | null;
+    replyingTo: Message | null;
+    editingMessage: Message | null;
+    isMuted: boolean;
+    searchResults: Message[];
+    searchQuery: string;
+    isViewingPinned: boolean;
+    isAiTyping: boolean;
+
+    fetchRooms: () => Promise<void>;
+    setActiveRoom: (room: Room) => Promise<void>;
+    connect: (token: string) => void;
+    disconnect: () => void;
+    sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }) => boolean;
+    editMessage: (messageId: string, content: string) => void;
+    recallMessage: (messageId: string) => void;
+    pinMessage: (messageId: string) => void;
+    setReplyingTo: (msg: Message | null) => void;
+    setEditingMessage: (msg: Message | null) => void;
+    addMessage: (msg: Message) => void;
+    clearSuggestion: () => void;
+    uploadFile: (file: File) => Promise<{ url: string, type: 'image' | 'file', filename: string }>;
+    clearHistory: (roomId: string) => Promise<void>;
+    searchMessages: (query: string) => Promise<void>;
+    setSearchQuery: (query: string) => void;
+    toggleMute: () => void;
+    setViewingPinned: (val: boolean) => void;
+}
+
+const RECONNECT_INTERVALS = [1000, 2000, 5000, 10000];
+
+export const useChatStore = create<ChatState>((set, get) => {
+    let reconnectAttempt = 0;
+    let heartBeatTimer: number | null = null;
+
+    const startHeartbeat = (socket: WebSocket) => {
+        if (heartBeatTimer) clearInterval(heartBeatTimer);
+        heartBeatTimer = window.setInterval(() => {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+            }
+        }, 30000);
+    };
+
+    return {
+        rooms: [],
+        activeRoom: null,
+        messages: [],
+        isConnected: false,
+        socket: null,
+        isLoading: false,
+        aiSuggestion: null,
+        replyingTo: null,
+        editingMessage: null,
+        isMuted: false,
+        searchResults: [],
+        searchQuery: '',
+        isViewingPinned: false,
+        isAiTyping: false,
+
+        fetchRooms: async () => {
+            set({ isLoading: true });
+            try {
+                const response = await chatService.getRooms();
+                set({ rooms: response.data });
+                if (response.data.length > 0 && !get().activeRoom) {
+                    get().setActiveRoom(response.data[0]);
+                }
+            } catch (error) {
+                console.error('Fetch rooms failed:', error);
+            } finally {
+                set({ isLoading: false });
+            }
+        },
+
+        setActiveRoom: async (room: Room) => {
+            set({ activeRoom: room, messages: [], isLoading: true });
+            try {
+                const response = await chatService.getMessages(room.id);
+                const formattedMessages: Message[] = response.data.map((m: any) => ({
+                    id: m.id,
+                    senderId: m.sender_id,
+                    senderName: m.sender_name,
+                    content: m.content,
+                    timestamp: m.timestamp,
+                    isBot: m.is_bot,
+                    file_url: m.file_url,
+                    file_type: m.file_type,
+                    is_edited: m.is_edited,
+                    is_recalled: m.is_recalled,
+                    is_pinned: m.is_pinned,
+                    reply_to_id: m.reply_to_id,
+                    reply_to_content: m.reply_to_content,
+                    suggestions: m.suggestions
+                }));
+                set({ messages: formattedMessages });
+            } catch (error) {
+                console.error('Fetch message history failed:', error);
+            } finally {
+                set({ isLoading: false });
+            }
+        },
+
+        addMessage: (msg: Message) => {
+            set((state) => {
+                const isCurrentRoom = msg.roomId === state.activeRoom?.id;
+                
+                // If message already exists (e.g. from local optimistic update), update it
+                const existingIndex = state.messages.findIndex(m => m.id === msg.id);
+                let newMessages = [...state.messages];
+                
+                if (isCurrentRoom) {
+                    if (existingIndex > -1) {
+                        newMessages[existingIndex] = { ...newMessages[existingIndex], ...msg };
+                    } else {
+                        newMessages.push(msg);
+                    }
+                }
+
+                const roomToUpdate = msg.roomId;
+                let roomExists = false;
+                
+                const updatedRooms = state.rooms.map(room => {
+                    if (room.id === roomToUpdate) {
+                        roomExists = true;
+                        return { 
+                            ...room, 
+                            updated_at: msg.timestamp,
+                            last_message: msg.is_recalled ? 'Tin nhắn đã được thu hồi' : msg.content,
+                            last_message_id: msg.id,
+                            last_message_sender: msg.senderName,
+                            last_message_at: msg.timestamp
+                        };
+                    }
+                    return room;
+                });
+
+                // If room doesn't exist in list (e.g. new direct chat from stranger), 
+                // we should probably trigger a refresh or add a placeholder
+                if (!roomExists && roomToUpdate) {
+                    // Trigger a refresh of the room list in the background
+                    setTimeout(() => get().fetchRooms(), 500);
+                }
+
+                const sortedRooms = [...updatedRooms].sort((a, b) => {
+                    const timeA = new Date(a.updated_at || 0).getTime();
+                    const timeB = new Date(b.updated_at || 0).getTime();
+                    return timeB - timeA;
+                });
+
+                return {
+                    messages: newMessages,
+                    rooms: sortedRooms
+                };
+            });
+        },
+
+        clearSuggestion: () => set({ aiSuggestion: null }),
+
+        connect: (token: string) => {
+            if (get().isConnected) return;
+
+            const socket = new WebSocket(`ws://localhost:8000/api/v1/ws/${token}`);
+
+            socket.onopen = () => {
+                set({ isConnected: true, socket });
+                reconnectAttempt = 0;
+                startHeartbeat(socket);
+                console.log('✅ WebSocket Connected');
+            };
+
+            socket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'pong') return;
+
+                switch (data.type) {
+                    case 'message':
+                        get().addMessage({
+                            id: data.message_id || Math.random().toString(36).substr(2, 9),
+                            roomId: data.room_id,
+                            senderId: data.sender_id,
+                            senderName: data.sender_name || data.sender,
+                            content: data.content,
+                            file_url: data.file_url,
+                            file_type: data.file_type,
+                            timestamp: data.timestamp || new Date().toISOString(),
+                            isBot: data.is_bot,
+                            is_edited: data.is_edited,
+                            is_recalled: data.is_recalled,
+                            is_pinned: data.is_pinned,
+                            reply_to_id: data.reply_to_id,
+                            reply_to_content: data.reply_to_content
+                        });
+                        break;
+                    case 'edit_message':
+                        set(state => {
+                            const newMessages = state.messages.map(m => {
+                                if (m.id === data.message_id) {
+                                    return { ...m, content: data.content, is_edited: true };
+                                }
+                                // Đồng bộ phần nội dung preview nếu tin nhắn này được người khác reply
+                                if (m.reply_to_id === data.message_id) {
+                                    return { ...m, reply_to_content: data.content };
+                                }
+                                return m;
+                            });
+                            
+                            // Cập nhật xem tin nhắn vừa sửa có phải là tin nhắn cuối cùng ở Sidebar không
+                            const updatedRooms = state.rooms.map(room => {
+                                if (room.id === data.room_id && room.last_message_id === data.message_id) {
+                                    return { ...room, last_message: data.content };
+                                }
+                                return room;
+                            });
+                            
+                            return { messages: newMessages, rooms: updatedRooms };
+                        });
+                        break;
+                    case 'recall_message':
+                        set(state => {
+                            const newMessages = state.messages.map(m => {
+                                if (m.id === data.message_id) {
+                                    return { ...m, is_recalled: true, content: 'Tin nhắn đã được thu hồi' };
+                                }
+                                // Đồng bộ phần nội dung preview nếu tin nhắn này được người khác reply
+                                if (m.reply_to_id === data.message_id) {
+                                    return { ...m, reply_to_content: 'Tin nhắn đã được thu hồi' };
+                                }
+                                return m;
+                            });
+                            
+                            const updatedRooms = state.rooms.map(room => {
+                                if (room.id === data.room_id && room.last_message_id === data.message_id) {
+                                    return { ...room, last_message: 'Tin nhắn đã được thu hồi' };
+                                }
+                                return room;
+                            });
+                            
+                            return { messages: newMessages, rooms: updatedRooms };
+                        });
+                        break;
+                    case 'pin_message':
+                        set(state => ({
+                            messages: state.messages.map(m => 
+                                m.id === data.message_id ? { ...m, is_pinned: data.is_pinned } : m
+                            )
+                        }));
+                        break;
+                    case 'ai_suggestion':
+                        set({ 
+                            aiSuggestion: { 
+                                messageId: data.message_id || 'error', 
+                                content: data.content, 
+                                isStreaming: false 
+                            } 
+                        });
+                        break;
+                    case 'ai_suggestion_start':
+                        set({ aiSuggestion: { messageId: data.message_id || 'suggest', content: '', isStreaming: true } });
+                        break;
+                    case 'ai_suggestion_chunk':
+                        set((state) => {
+                            if (state.aiSuggestion && state.aiSuggestion.messageId === data.message_id) {
+                                return { 
+                                    aiSuggestion: { 
+                                        ...state.aiSuggestion, 
+                                        content: state.aiSuggestion.content + data.content 
+                                    } 
+                                };
+                            }
+                            return state;
+                        });
+                        break;
+                    case 'ai_suggestion_end':
+                        set((state) => {
+                            if (state.aiSuggestion && state.aiSuggestion.messageId === data.message_id) {
+                                return { 
+                                    aiSuggestion: { 
+                                        ...state.aiSuggestion, 
+                                        isStreaming: false 
+                                    } 
+                                };
+                            }
+                            return state;
+                        });
+                        break;
+                    case 'start':
+                        get().addMessage({
+                            id: data.message_id,
+                            senderId: 'ai-bot',
+                            senderName: data.sender || 'AI',
+                            content: '',
+                            timestamp: new Date().toISOString(),
+                            isBot: true,
+                            isStreaming: true,
+                        });
+                        break;
+                    case 'chunk':
+                    case 'stream':
+                        set((state) => {
+                            const newMessages = [...state.messages];
+                            const msgIndex = newMessages.findIndex(m => m.id === data.message_id);
+                            if (msgIndex !== -1) {
+                                newMessages[msgIndex] = {
+                                    ...newMessages[msgIndex],
+                                    content: newMessages[msgIndex].content + data.content,
+                                    isStreaming: true,
+                                };
+                            }
+                            return { messages: newMessages };
+                        });
+                        break;
+                    case 'end':
+                        set((state) => {
+                            const newMessages = [...state.messages];
+                            const msgIndex = newMessages.findIndex(m => m.id === data.message_id);
+                            if (msgIndex !== -1) {
+                                newMessages[msgIndex] = {
+                                    ...newMessages[msgIndex],
+                                    isStreaming: false,
+                                    timestamp: data.timestamp || newMessages[msgIndex].timestamp
+                                };
+                            }
+
+                            // Update room updated_at when AI finishes
+                            const updatedRooms = state.rooms.map(room => 
+                                room.id === data.room_id 
+                                    ? { ...room, updated_at: data.timestamp || room.updated_at }
+                                    : room
+                            ).sort((a, b) => {
+                                const timeA = new Date(a.updated_at || 0).getTime();
+                                const timeB = new Date(b.updated_at || 0).getTime();
+                                return timeB - timeA;
+                            });
+
+                            return { messages: newMessages, rooms: updatedRooms, isAiTyping: false };
+                        });
+                        break;
+                    case 'typing':
+                        if (data.room_id === get().activeRoom?.id) {
+                            set({ isAiTyping: data.status });
+                        }
+                        break;
+                    case 'ai_suggestions_list':
+                        set((state) => {
+                            const newMessages = state.messages.map(m => 
+                                m.id === data.message_id ? { ...m, suggestions: data.suggestions } : m
+                            );
+                            return { messages: newMessages };
+                        });
+                        break;
+                }
+            };
+
+            socket.onclose = () => {
+                set({ isConnected: false, socket: null });
+                if (heartBeatTimer) clearInterval(heartBeatTimer);
+                
+                // Reconnect logic
+                const interval = RECONNECT_INTERVALS[reconnectAttempt] || 10000;
+                reconnectAttempt = Math.min(reconnectAttempt + 1, RECONNECT_INTERVALS.length - 1);
+                setTimeout(() => {
+                    if (token) get().connect(token);
+                }, interval);
+            };
+        },
+
+        disconnect: () => {
+            if (get().socket) {
+                get().socket?.close();
+            }
+            if (heartBeatTimer) clearInterval(heartBeatTimer);
+            set({ isConnected: false, socket: null, messages: [], replyingTo: null, editingMessage: null });
+        },
+
+        sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }) => {
+            const { socket, activeRoom } = get();
+            if (socket && socket.readyState === WebSocket.OPEN && activeRoom) {
+                socket.send(JSON.stringify({
+                    type: 'message',
+                    content,
+                    room_id: activeRoom.id,
+                    reply_to_id: replyToId,
+                    file_url: fileData?.url,
+                    file_type: fileData?.type
+                }));
+                set({ replyingTo: null });
+                return true;
+            }
+            return false;
+        },
+
+        editMessage: (messageId: string, content: string) => {
+            const { socket, activeRoom } = get();
+            if (socket && socket.readyState === WebSocket.OPEN && activeRoom) {
+                socket.send(JSON.stringify({
+                    type: 'edit',
+                    message_id: messageId,
+                    content: content,
+                    room_id: activeRoom.id
+                }));
+                set({ editingMessage: null });
+            }
+        },
+
+        recallMessage: (messageId: string) => {
+            const { socket, activeRoom } = get();
+            if (socket && socket.readyState === WebSocket.OPEN && activeRoom) {
+                socket.send(JSON.stringify({
+                    type: 'recall',
+                    message_id: messageId,
+                    room_id: activeRoom.id
+                }));
+            }
+        },
+
+        pinMessage: (messageId: string) => {
+            const { socket, activeRoom } = get();
+            if (socket && socket.readyState === WebSocket.OPEN && activeRoom) {
+                socket.send(JSON.stringify({
+                    type: 'pin',
+                    message_id: messageId,
+                    room_id: activeRoom.id
+                }));
+            }
+        },
+
+        setReplyingTo: (msg: Message | null) => set({ replyingTo: msg }),
+        setEditingMessage: (msg: Message | null) => set({ editingMessage: msg }),
+
+        uploadFile: async (file: File) => {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const response = await chatService.uploadFile(formData);
+            return {
+                url: response.data.url,
+                type: response.data.type,
+                filename: response.data.filename
+            };
+        },
+
+        clearHistory: async (roomId: string) => {
+            set({ isLoading: true });
+            try {
+                await chatService.clearHistory(roomId);
+                if (get().activeRoom?.id === roomId) {
+                    set({ messages: [] });
+                }
+                // Cập nhật danh sách room để xóa tin nhắn cuối
+                set(state => ({
+                    rooms: state.rooms.map(r => r.id === roomId ? { ...r, last_message: "" } : r)
+                }));
+            } catch (error) {
+                console.error('Clear history error:', error);
+            } finally {
+                set({ isLoading: false });
+            }
+        },
+
+        searchMessages: async (query: string) => {
+            if (!query.trim()) {
+                set({ searchResults: [], searchQuery: '' });
+                return;
+            }
+            set({ isLoading: true, searchQuery: query });
+            try {
+                const response = await chatService.searchMessages(query, get().activeRoom?.id);
+                set({ searchResults: response.data });
+            } catch (error) {
+                console.error('Search error:', error);
+            } finally {
+                set({ isLoading: false });
+            }
+        },
+
+        setSearchQuery: (query: string) => set({ searchQuery: query }),
+        toggleMute: () => set(state => ({ isMuted: !state.isMuted })),
+        setViewingPinned: (val: boolean) => set({ isViewingPinned: val }),
+    };
+});
