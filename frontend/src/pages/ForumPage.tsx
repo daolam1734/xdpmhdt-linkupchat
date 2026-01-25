@@ -22,6 +22,8 @@ import { formatRelativeTime } from '../utils/time';
 import { Avatar } from '../components/common/Avatar';
 import { clsx } from 'clsx';
 import type { Post } from '../types/forum';
+import toast from 'react-hot-toast';
+import { ConfirmModal } from '../components/common/ConfirmModal';
 
 interface ForumPageProps {
     onBack: () => void;
@@ -47,6 +49,7 @@ export const ForumPage: React.FC<ForumPageProps> = ({ onBack }) => {
     const [analyses, setAnalyses] = useState<{[key: string]: { text: string, loading: boolean }}>({});
     const [expandedComments, setExpandedComments] = useState<{[key: string]: boolean}>({});
     const [searchQuery, setSearchQuery] = useState('');
+    const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
 
     useEffect(() => {
         fetchPosts();
@@ -103,9 +106,9 @@ export const ForumPage: React.FC<ForumPageProps> = ({ onBack }) => {
             });
             setShowShareModal(false);
             setSharingPost(null);
-            alert("Đã chia sẻ bài viết lên trang cá nhân của bạn!");
+            toast.success("Đã chia sẻ bài viết lên trang cá nhân của bạn!");
         } catch (error) {
-            alert("Lỗi khi chia sẻ bài viết");
+            toast.error("Lỗi khi chia sẻ bài viết");
         }
     };
 
@@ -126,7 +129,7 @@ export const ForumPage: React.FC<ForumPageProps> = ({ onBack }) => {
         
         setShowShareModal(false);
         setSharingPost(null);
-        alert("Đã gửi bài viết cho bạn bè!");
+        toast.success("Đã gửi bài viết cho bạn bè!");
     };
 
     const handleAnalyze = async (postId: string) => {
@@ -175,8 +178,9 @@ export const ForumPage: React.FC<ForumPageProps> = ({ onBack }) => {
             await createPost(newPost);
             setNewPost({ title: '', content: '', tags: [] });
             setShowCreateModal(false);
+            toast.success("Đã đăng bài viết mới!");
         } catch (error) {
-            alert("Lỗi khi đăng bài");
+            toast.error("Lỗi khi đăng bài");
         }
     };
 
@@ -186,8 +190,9 @@ export const ForumPage: React.FC<ForumPageProps> = ({ onBack }) => {
         try {
             await addComment(postId, text);
             setCommentTexts(prev => ({ ...prev, [postId]: '' }));
+            toast.success("Đã thêm bình luận!");
         } catch (error) {
-            alert("Lỗi khi bình luận");
+            toast.error("Lỗi khi bình luận");
         }
     };
 
@@ -300,11 +305,7 @@ export const ForumPage: React.FC<ForumPageProps> = ({ onBack }) => {
                                         </button>
                                         {(post.author_id === currentUser?.id || currentUser?.is_superuser) && (
                                             <button 
-                                                onClick={() => {
-                                                    if (window.confirm("Bạn có chắc muốn xóa bài viết này?")) {
-                                                        deletePost(post.id);
-                                                    }
-                                                }}
+                                                onClick={() => setDeletingPostId(post.id)}
                                                 className="p-2 hover:bg-red-50 rounded-full text-gray-400 hover:text-red-500 transition-colors"
                                             >
                                                 <Trash2 size={18} />
@@ -582,7 +583,7 @@ export const ForumPage: React.FC<ForumPageProps> = ({ onBack }) => {
                             <button 
                                 onClick={() => {
                                     navigator.clipboard.writeText(`${sharingPost.title}\n${window.location.href}`);
-                                    alert("Đã sao chép liên kết!");
+                                    toast.success("Đã sao chép liên kết!");
                                 }}
                                 className="w-full py-2 text-gray-600 font-bold text-sm hover:text-blue-600 transition-colors"
                             >
@@ -592,6 +593,19 @@ export const ForumPage: React.FC<ForumPageProps> = ({ onBack }) => {
                     </div>
                 </div>
             )}
+
+            <ConfirmModal 
+                isOpen={!!deletingPostId}
+                title="Xóa bài viết"
+                message="Bạn có chắc muốn xóa bài viết này không? Hành động này không thể hoàn tác."
+                onConfirm={() => {
+                    if (deletingPostId) {
+                        deletePost(deletingPostId);
+                        toast.success("Đã xóa bài viết");
+                    }
+                }}
+                onCancel={() => setDeletingPostId(null)}
+            />
         </div>
     );
 };

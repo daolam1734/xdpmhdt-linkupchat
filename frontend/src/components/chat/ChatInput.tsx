@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, ThumbsUp, X, Reply, Edit2, Paperclip, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore } from '../../store/useChatStore';
+import toast from 'react-hot-toast';
 
 interface ChatInputProps {
   onSendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }) => void;
@@ -58,7 +59,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
 
     // Ràng buộc 5MB
     if (file.size > 5 * 1024 * 1024) {
-        alert("Tệp quá lớn. Giới hạn tối đa là 5MB.");
+        toast.error("Tệp quá lớn. Giới hạn tối đa là 5MB.");
         return;
     }
 
@@ -67,8 +68,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
         const result = await uploadFile(file);
         // Gửi tin nhắn chứa file ngay lập tức
         onSendMessage("", replyingTo?.id, { url: result.url, type: result.type });
+        toast.success("Tải tệp lên thành công!");
     } catch (error: any) {
-        alert(error.response?.data?.detail || "Lỗi khi tải tệp lên.");
+        toast.error(error.response?.data?.detail || "Lỗi khi tải tệp lên.");
     } finally {
         setUploading(false);
         if (fileInputRef.current) fileInputRef.current.value = '';

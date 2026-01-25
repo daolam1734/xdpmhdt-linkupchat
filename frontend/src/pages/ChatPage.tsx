@@ -7,6 +7,8 @@ import { Sidebar } from '../components/layout/Sidebar';
 import { Avatar } from '../components/common/Avatar';
 import { Info, LogOut, Pin, Search, Trash2, BellOff, Flag, X, LayoutDashboard } from 'lucide-react';
 import { formatChatTime } from '../utils/time';
+import toast from 'react-hot-toast';
+import { ConfirmModal } from '../components/common/ConfirmModal';
 
 interface ChatPageProps {
     onNavigateToAdmin?: () => void;
@@ -40,6 +42,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin, onNavigat
     isAiTyping
   } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showClearConfirm, setShowClearConfirm] = React.useState(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -61,14 +64,18 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin, onNavigat
         <header className="h-[60px] border-b border-gray-100 px-3 flex items-center justify-between bg-white/95 backdrop-blur-sm z-10 shadow-sm">
           <div className="flex items-center space-x-2">
             {activeRoom && (
-                <Avatar name={activeRoom.name} isOnline={isConnected} size="md" />
+                <Avatar 
+                    name={activeRoom.name} 
+                    isOnline={activeRoom.type === 'ai' ? true : activeRoom.is_online} 
+                    size="md" 
+                />
             )}
             <div>
               <h1 className="text-[16px] font-bold text-black leading-tight">
                 {activeRoom?.name || 'Đang tải...'}
               </h1>
               <p className="text-[12px] text-gray-500 font-normal">
-                {isConnected ? 'Đang hoạt động' : 'Đang kết nối...'}
+                {(activeRoom?.type === 'ai' || activeRoom?.is_online) ? 'Đang hoạt động' : ''}
               </p>
             </div>
           </div>
@@ -124,8 +131,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin, onNavigat
                     
                     <button 
                         onClick={() => {
-                            if (activeRoom && window.confirm("Xác nhận xóa toàn bộ lịch sử trò chuyện? Hành động này không thể hoàn tác.")) {
-                                clearHistory(activeRoom.id);
+                            if (activeRoom) {
+                                setShowClearConfirm(true);
                             }
                         }}
                         className="w-full flex items-center space-x-3 px-4 py-2 hover:bg-gray-50 text-[14px] text-gray-700"
@@ -135,7 +142,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin, onNavigat
                     </button>
                     
                     <button 
-                        onClick={() => alert("Cảm ơn bạn đã báo cáo. Chúng tôi sẽ xử lý sớm nhất có thể!")}
+                        onClick={() => toast.success("Cảm ơn bạn đã báo cáo. Chúng tôi sẽ xử lý sớm nhất có thể!")}
                         className="w-full flex items-center space-x-3 px-4 py-2 hover:bg-gray-50 text-[14px] text-red-500"
                     >
                         <Flag size={18} />
@@ -330,7 +337,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin, onNavigat
                                             setSearchQuery('');
                                             document.getElementById(`msg-${msg.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                                         } else {
-                                            alert("Tin nhắn này đã cũ, không thể chuyển hướng tới vị trí chính xác hiện tại.");
+                                            toast.error("Tin nhắn này đã cũ, không thể chuyển hướng tới vị trí chính xác hiện tại.");
                                         }
                                     }}
                                     className="p-3 hover:bg-gray-50 rounded-xl cursor-pointer border-b border-gray-50 last:border-none group"
@@ -390,6 +397,19 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin, onNavigat
             <ChatInput onSendMessage={sendMessage} />
         </div>
       </div>
+
+      <ConfirmModal 
+        isOpen={showClearConfirm}
+        title="Xóa lịch sử"
+        message="Xác nhận xóa toàn bộ lịch sử trò chuyện? Hành động này không thể hoàn tác."
+        onConfirm={() => {
+            if (activeRoom) {
+                clearHistory(activeRoom.id);
+                toast.success("Đã xóa lịch sử trò chuyện");
+            }
+        }}
+        onCancel={() => setShowClearConfirm(false)}
+      />
     </div>
   );
 };

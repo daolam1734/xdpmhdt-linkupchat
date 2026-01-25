@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { Avatar } from '../components/common/Avatar';
 import { formatRelativeTime } from '../utils/time';
+import toast from 'react-hot-toast';
+import { ConfirmModal } from '../components/common/ConfirmModal';
 
 interface Stats {
     total_users: number;
@@ -39,6 +41,7 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'rooms' | 'settings'>('overview');
+    const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchAdminData = async () => {
@@ -53,7 +56,7 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 setConfig(configRes.data);
             } catch (error) {
                 console.error('Admin fetch error:', error);
-                alert("Bạn không có quyền truy cập trang này!");
+                toast.error("Bạn không có quyền truy cập trang này!");
                 onBack();
             } finally {
                 setLoading(false);
@@ -67,21 +70,26 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         setSaving(true);
         try {
             await api.post('/admin/config', { configs: config });
-            alert("Cập nhật cấu hình thành công! Hệ thống đã áp dụng API Key mới.");
+            toast.success("Cập nhật cấu hình thành công!");
         } catch (error) {
-            alert("Lỗi khi cập nhật cấu hình");
+            toast.success("Lỗi khi cập nhật cấu hình");
         } finally {
             setSaving(false);
         }
     };
 
     const handleDeleteUser = async (userId: string) => {
-        if (!window.confirm("Xác nhận xóa người dùng này?")) return;
+        setDeletingUserId(userId);
+    };
+
+    const confirmDeleteUser = async () => {
+        if (!deletingUserId) return;
         try {
-            await api.delete(`/admin/users/${userId}`);
-            setUsers(users.filter(u => u.id !== userId));
+            await api.delete(`/admin/users/${deletingUserId}`);
+            setUsers(users.filter(u => u.id !== deletingUserId));
+            toast.success("Đã xóa người dùng");
         } catch (error) {
-            alert("Lỗi khi xóa người dùng");
+            toast.error("Lỗi khi xóa người dùng");
         }
     };
 
@@ -426,6 +434,14 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     )}
                 </div>
             </main>
+
+            <ConfirmModal 
+                isOpen={!!deletingUserId}
+                title="Xóa người dùng"
+                message="Xác nhận xóa người dùng này? Toàn bộ tin nhắn và dữ liệu cá nhân sẽ bị loại bỏ khỏi hệ thống."
+                onConfirm={confirmDeleteUser}
+                onCancel={() => setDeletingUserId(null)}
+            />
         </div>
     );
 };

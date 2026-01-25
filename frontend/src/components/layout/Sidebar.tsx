@@ -12,6 +12,7 @@ import type { UserSearchItem, FriendRequest } from '../../api/users';
 import { formatRelativeTime } from '../../utils/time';
 import { useAuthStore } from '../../store/useAuthStore';
 import { ProfileModal } from '../chat/ProfileModal';
+import toast from 'react-hot-toast';
 
 interface SidebarProps {
     rooms: Room[];
@@ -71,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
         } catch (error: any) {
             console.error('Start chat error:', error);
             if (error.response?.status === 403) {
-                alert(error.response.data.detail || "Người dùng này chỉ nhận tin nhắn từ bạn bè.");
+                toast.error(error.response.data.detail || "Người dùng này chỉ nhận tin nhắn từ bạn bè.");
             }
         }
     };
@@ -83,8 +84,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
             setSearchResults(prev => prev.map(u => 
                 u.id === user.id ? { ...u, request_sent: true } : u
             ));
+            toast.success("Đã gửi lời mời kết bạn!");
         } catch (error) {
             console.error('Send request error:', error);
+            toast.error("Lỗi khi gửi lời mời kết bạn");
         }
     };
 
@@ -94,8 +97,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
             await acceptFriendRequest(requestId);
             setPendingRequests(prev => prev.filter(r => r.request_id !== requestId));
             if (onRoomCreated) await onRoomCreated();
+            toast.success("Đã chấp nhận kết bạn!");
         } catch (error) {
             console.error('Accept error:', error);
+            toast.error("Lỗi khi chấp nhận kết bạn");
         }
     };
 
@@ -152,12 +157,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                                         <div className="flex flex-col">
                                             <div className="flex items-center">
                                                 <span className="font-semibold text-[15px] text-black">{user.username}</span>
-                                                {user.is_online && (
-                                                    <span className="ml-1.5 w-2 h-2 bg-green-500 rounded-full"></span>
-                                                )}
                                             </div>
                                             <span className="text-[12px] text-gray-500">
-                                                {user.is_online ? 'Đang hoạt động' : 'Đã ngoại tuyến'}
+                                                {user.is_online ? 'Đang hoạt động' : ''}
                                             </span>
                                         </div>
                                     </div>
@@ -239,13 +241,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                         {/* Stories / Active People (Horizontal Scroll) */}
                         <div className="flex overflow-x-auto px-1 py-3 space-x-4 no-scrollbar mb-1">
                             {/* Hiển thị những người đang online từ danh sách chat direct */}
-                            {rooms.filter(r => r.type === 'direct').slice(0, 10).map((room) => (
+                            {rooms.filter(r => r.type === 'direct' && r.is_online).slice(0, 10).map((room) => (
                                 <div key={room.id} className="flex flex-col items-center space-y-1 flex-shrink-0 cursor-pointer" onClick={() => onSelectRoom?.(room)}>
                                     <div className="relative">
                                         <Avatar name={room.name} url={room.avatar_url} isOnline={room.is_online} size="lg" />
-                                        {room.is_online && (
-                                            <div className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full" />
-                                        )}
                                     </div>
                                     <span className="text-[11px] font-medium text-gray-500 truncate w-14 text-center">{room.name.split(' ')[0]}</span>
                                 </div>
@@ -294,10 +293,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                                 )}
                             >
                                 <div className="relative shrink-0">
-                                    <Avatar name={room.name} url={room.avatar_url} size="lg" />
-                                    {room.type === 'direct' && (
-                                        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full" />
-                                    )}
+                                    <Avatar name={room.name} url={room.avatar_url} size="lg" isOnline={room.is_online} />
                                 </div>
                                 
                                 <div className="flex-1 text-left overflow-hidden pr-2">
