@@ -185,6 +185,12 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                             >
                                 {message.content}
                             </ReactMarkdown>
+                            <div className="mt-3 pt-2 border-t border-purple-100/50 flex items-center space-x-1.5 opacity-50">
+                                <Info size={10} className="text-purple-400" />
+                                <span className="text-[9px] font-medium text-purple-600 italic">
+                                    AI có thể không chính xác. Vui lòng kiểm tra thông tin quan trọng.
+                                </span>
+                            </div>
                         </div>
                     ) : (
                         <div className="tracking-tight">
