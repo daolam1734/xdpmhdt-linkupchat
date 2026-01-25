@@ -112,6 +112,101 @@ MỤC TIÊU CUỐI CÙNG
 - Giúp người dùng giao tiếp tốt hơn, làm trải nghiệm chat thuận tiện và không gây phiền nhiễu.
 """
 
+async def notify_user_status_change(user_id: str, is_online: bool):
+    """
+    Thông báo cho tất cả bạn bè về việc người dùng thay đổi trạng thái online.
+    """
+    try:
+        user = await db["users"].find_one({"id": user_id})
+        if not user: return
+        
+        # Nếu người dùng tắt chế độ hiển thị trạng thái, luôn hiện offline cho người khác
+        effective_online = is_online and user.get("show_online_status", True)
+        
+        # Lấy danh sách bạn bè
+        friends_reqs = await db["friend_requests"].find({
+            "status": "accepted",
+            "$or": [{"from_id": user_id}, {"to_id": user_id}]
+        }).to_list(length=1000)
+
+        friend_ids = []
+        for req in friends_reqs:
+            friend_ids.append(req["to_id"] if req["from_id"] == user_id else req["from_id"])
+            
+        # Gửi thông báo cho từng bạn bè đang online
+        for friend_id in friend_ids:
+            # Ràng buộc: Không gửi status nếu có quan hệ chặn
+            friend_user = await db["users"].find_one({"id": friend_id})
+            if friend_user:
+                is_blocked = (user_id in friend_user.get("blocked_users", []) or 
+                             friend_id in user.get("blocked_users", []))
+                
+                status_to_send = effective_online if not is_blocked else False
+                
+                await manager.send_to_user(friend_id, {
+                    "type": "user_status_change",
+                    "user_id": user_id,
+                    "is_online": status_to_send
+                })
+    except Exception as e:
+        print(f"Error in notify_user_status_change: {e}")
+
+async def notify_block_status_change(target_user_id: str, by_user_id: str, is_blocked: bool):
+    """
+    Thông báo thời gian thực về trạng thái chặn/bỏ chặn cho cả người chặn và người bị chặn.
+    """
+    # 1. Gửi cho người bị chặn
+    msg_type_target = "user_blocked_me" if is_blocked else "user_unblocked_me"
+    await manager.send_to_user(target_user_id, {
+        "type": msg_type_target,
+        "by_user_id": by_user_id
+    })
+    
+    # Nếu là chặn, gửi thêm tín hiệu offline giả lập để ẩn trạng thái ngay lập tức
+    if is_blocked:
+        await manager.send_to_user(target_user_id, {
+            "type": "user_status_change",
+            "user_id": by_user_id,
+            "is_online": False
+        })
+    
+    # 2. Gửi cho người chặn (để đồng bộ các session khác)
+    msg_type_actor = "user_i_blocked" if is_blocked else "user_i_unblocked"
+    await manager.send_to_user(by_user_id, {
+        "type": msg_type_actor,
+        "target_user_id": target_user_id
+    })
+    
+    # Nếu chặn, ẩn luôn trạng thái của đối phương trên máy người chặn
+    if is_blocked:
+        await manager.send_to_user(by_user_id, {
+            "type": "user_status_change",
+            "user_id": target_user_id,
+            "is_online": False
+        })
+    else:
+        # Nếu bỏ chặn, cập nhật lại trạng thái online thực tế cho cả hai
+        target_user = await db["users"].find_one({"id": target_user_id})
+        actor_user = await db["users"].find_one({"id": by_user_id})
+        
+        if target_user:
+            # Gửi cho người thực hiện bỏ chặn (by_user_id) trạng thái của target
+            eff_target_online = target_user.get("is_online", False) and target_user.get("show_online_status", True)
+            await manager.send_to_user(by_user_id, {
+                "type": "user_status_change",
+                "user_id": target_user_id,
+                "is_online": eff_target_online
+            })
+            
+        if actor_user:
+            # Gửi cho người vừa được bỏ chặn (target_user_id) trạng thái của actor
+            eff_actor_online = actor_user.get("is_online", False) and actor_user.get("show_online_status", True)
+            await manager.send_to_user(target_user_id, {
+                "type": "user_status_change",
+                "user_id": by_user_id,
+                "is_online": eff_actor_online
+            })
+
 class ConnectionManager:
     def __init__(self):
         # Dict of user_id -> list of websockets
@@ -195,6 +290,11 @@ async def run_ai_generation_task(
         import uuid
         
         async def send_ai_data(data: dict):
+            # Chỉ hiển thị hiệu ứng trung gian (typing, streaming) trong các phòng chuyên dụng cho AI (AI Room / Support Room)
+            # Trong các phòng chat cộng đồng, AI sẽ "im lặng" xử lý và chỉ xuất hiện khi có kết quả cuối cùng.
+            if not is_ai_room and data["type"] in ["typing", "start", "chunk"]:
+                return
+
             if is_suggestion_mode:
                 # Chỉ gửi gợi ý cho các thành viên KHÁC trong phòng
                 members = await db["room_members"].find({"room_id": room_id}).to_list(length=100)
@@ -207,8 +307,8 @@ async def run_ai_generation_task(
                         else:
                             suggestion_data["type"] = f"ai_suggestion_{suggestion_data['type']}"
                         await manager.send_to_user(member["user_id"], suggestion_data)
-            elif room_id in SELF_ISOLATED_ROOMS:
-                # Chỉ gửi cho người dùng yêu cầu (Isolation)
+            elif is_ai_room:
+                # Chỉ gửi cho người dùng yêu cầu (Isolation cho Chat AI/Support)
                 await manager.send_to_user(user_id, data)
             else:
                 await manager.broadcast_to_room(room_id, data)
@@ -308,6 +408,20 @@ async def run_ai_generation_task(
             await db["messages"].insert_one(db_ai_msg)
             await db["chat_rooms"].update_one({"id": room_id}, {"$set": {"updated_at": ai_final_ts}})
 
+        # Gửi tin nhắn hoàn chỉnh cuối cùng để cập nhật sidebar và lưu trạng thái cuối cùng
+        # (Đối với phòng cộng đồng, điều này thay thế hiệu ứng streaming đã bị chặn.
+        # Đối với phòng AI, điều này đồng bộ hóa trạng thái cuối cùng với sidebar)
+        await send_ai_data({
+            "type": "message",
+            "message_id": ai_msg_id,
+            "sender_id": None,
+            "sender_name": ai_identity,
+            "content": full_response,
+            "is_bot": True,
+            "room_id": room_id,
+            "timestamp": ai_final_ts.isoformat()
+        })
+
         await send_ai_data({
             "type": "end",
             "message_id": ai_msg_id,
@@ -316,12 +430,12 @@ async def run_ai_generation_task(
         })
         
         # Đảm bảo tắt trạng thái typing khi kết thúc thành công
-        await manager.broadcast_to_room(room_id, {"type": "typing", "room_id": room_id, "status": False})
+        await send_ai_data({"type": "typing", "room_id": room_id, "status": False})
 
     except Exception as e:
         print(f"❌ Background AI Error: {e}")
         # Đảm bảo tắt trạng thái typing khi có lỗi
-        await manager.broadcast_to_room(room_id, {"type": "typing", "room_id": room_id, "status": False})
+        await send_ai_data({"type": "typing", "room_id": room_id, "status": False})
         # Gửi lỗi cho người dùng
         try:
             await send_ai_data({
@@ -359,6 +473,9 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
         {"id": user_id},
         {"$set": {"is_online": True, "last_seen": datetime.now(timezone.utc)}}
     )
+    
+    # Thông báo cho bạn bè
+    await notify_user_status_change(user_id, True)
     
     manager.connect(websocket, user_id)
     
@@ -417,6 +534,26 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                 file_type = message_json.get("file_type") # "image" hoặc "file"
                 
                 if not content and not file_url: continue
+
+                # Kiểm tra chặn người dùng (trong trường hợp chat 1-1)
+                room_obj = await db["chat_rooms"].find_one({"id": room_id})
+                if room_obj and room_obj.get("type") == "direct":
+                    members = await db["room_members"].find({"room_id": room_id}).to_list(length=2)
+                    other_member_id = next((m["user_id"] for m in members if m["user_id"] != user_id), None)
+                    if other_member_id:
+                        other_user = await db["users"].find_one({"id": other_member_id})
+                        if other_user and user_id in other_user.get("blocked_users", []):
+                            await manager.send_to_user(user_id, {
+                                "type": "error", 
+                                "message": "Không thể gửi tin nhắn. Người dùng này đã chặn bạn."
+                            })
+                            continue
+                        if other_member_id in user_obj.get("blocked_users", []):
+                            await manager.send_to_user(user_id, {
+                                "type": "error", 
+                                "message": "Bạn đang chặn người dùng này."
+                            })
+                            continue
 
                 # Tự động tham gia phòng nếu chưa là thành viên (Dành cho phòng Public/AI)
                 await db["room_members"].update_one(
@@ -517,6 +654,8 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                 if should_ai_respond:
                     ai_msg_id = str(uuid.uuid4())
                     ai_identity = "LinkUp Assistant"
+                    if room_id == "help":
+                        ai_identity = "LinkUp Support"
                     
                     # Trích xuất prompt sạch
                     prompt_clean = content
@@ -630,20 +769,25 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
     except WebSocketDisconnect:
         manager.disconnect(websocket, user_id)
         # Cập nhật trạng thái offline
+        now = datetime.now(timezone.utc)
         await db["users"].update_one(
             {"id": user_id},
-            {"$set": {"is_online": False, "last_seen": datetime.now(timezone.utc)}}
+            {"$set": {"is_online": False, "last_seen": now}}
         )
+        # Thông báo cho bạn bè
+        await notify_user_status_change(user_id, False)
         print(f"ℹ️ WebSocket Disconnected: User {user_id}")
     except Exception as e:
         print(f"❌ WebSocket error ({user_id}): {e}")
         try:
             manager.disconnect(websocket, user_id)
             if user_id:
+                now = datetime.now(timezone.utc)
                 await db["users"].update_one(
                     {"id": user_id},
-                    {"$set": {"is_online": False, "last_seen": datetime.now(timezone.utc)}}
+                    {"$set": {"is_online": False, "last_seen": now}}
                 )
+                await notify_user_status_change(user_id, False)
         except:
             pass
 

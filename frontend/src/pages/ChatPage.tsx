@@ -4,11 +4,13 @@ import { useChatStore } from '../store/useChatStore';
 import { MessageItem } from '../components/chat/MessageItem';
 import { ChatInput } from '../components/chat/ChatInput';
 import { Sidebar } from '../components/layout/Sidebar';
+import { ProfileView } from '../components/chat/ProfileView';
 import { Avatar } from '../components/common/Avatar';
-import { Info, LogOut, Pin, Search, Trash2, BellOff, Flag, X, LayoutDashboard } from 'lucide-react';
+import { Info, LogOut, Pin, Search, Trash2, BellOff, Flag, X, LayoutDashboard, MessageCircle } from 'lucide-react';
 import { formatChatTime } from '../utils/time';
 import toast from 'react-hot-toast';
 import { ConfirmModal } from '../components/common/ConfirmModal';
+import { clsx } from 'clsx';
 
 interface ChatPageProps {
     onNavigateToAdmin?: () => void;
@@ -38,14 +40,46 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
     setSearchQuery,
     isViewingPinned,
     setViewingPinned,
-    isAiTyping
+    isAiTyping,
+    activeDropdownId,
+    setActiveDropdown,
+    viewingUser,
+    setViewingUser
   } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const [showClearConfirm, setShowClearConfirm] = React.useState(false);
 
+  const showHeaderMenu = activeDropdownId === 'header-info';
+
+  // Close menus on click outside
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!activeDropdownId) return;
+    const handleClickOutside = () => setActiveDropdown(null);
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, [activeDropdownId, setActiveDropdown]);
+
+  // Smart scrolling logic
+  useEffect(() => {
+    if (!mainRef.current) return;
+    
+    const container = mainRef.current;
+    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 200;
+    const lastMessage = messages[messages.length - 1];
+    const isMyMessage = lastMessage?.senderId === currentUser?.id || lastMessage?.senderName === currentUser?.username;
+
+    // Always scroll to bottom if it's my message or if I'm already at the bottom
+    // Also scroll if it's the first load of messages for this room
+    if (isAtBottom || isMyMessage) {
+        messagesEndRef.current?.scrollIntoView({ behavior: messages.length <= 50 ? 'auto' : 'smooth' });
+    }
+  }, [messages, currentUser]);
+
+  // Scroll to bottom when room changes
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+  }, [activeRoom?.id]);
 
   return (
     <div className="flex h-screen bg-white font-sans overflow-hidden">
@@ -56,15 +90,32 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
         onRoomCreated={fetchRooms}
       />
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col relative bg-white">
-        {/* Messenger Style Header */}
-        <header className="h-[60px] border-b border-gray-100 px-3 flex items-center justify-between bg-white/95 backdrop-blur-sm z-10 shadow-sm">
+      {/* Main Chat Area / Profile Area */}
+      <div className="flex-1 flex flex-col relative bg-white overflow-hidden">
+        {viewingUser ? (
+          <ProfileView 
+            user={viewingUser} 
+            onBack={() => setViewingUser(null)} 
+          />
+        ) : !activeRoom ? (
+          <div className="flex-1 flex flex-col items-center justify-center bg-gray-50/30">
+            <div className="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center mb-6">
+                <MessageCircle size={40} className="text-blue-500" />
+            </div>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight mb-2">Chào mừng bạn đến với LinkUp</h2>
+            <p className="text-gray-500 font-medium max-w-xs text-center">
+                Chọn một cuộc trò chuyện từ danh sách bên trái để bắt đầu nhắn tin.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Messenger Style Header */}
+            <header className="h-[60px] border-b border-gray-100 px-3 flex items-center justify-between bg-white/95 backdrop-blur-sm z-10 shadow-sm shrink-0">
           <div className="flex items-center space-x-2">
             {activeRoom && (
                 <Avatar 
                     name={activeRoom.name} 
-                    isOnline={activeRoom.type === 'ai' ? true : activeRoom.is_online} 
+                    isOnline={activeRoom.type === 'ai' ? true : (activeRoom.is_online && !activeRoom.blocked_by_other && !(activeRoom.other_user_id && currentUser?.blocked_users?.includes(activeRoom.other_user_id)))} 
                     size="md" 
                 />
             )}
@@ -73,100 +124,130 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                 {activeRoom?.name || 'Đang tải...'}
               </h1>
               <p className="text-[12px] text-gray-500 font-normal">
-                {(activeRoom?.type === 'ai' || activeRoom?.is_online) ? 'Đang hoạt động' : ''}
+                {activeRoom?.blocked_by_other 
+                  ? '' 
+                  : (activeRoom?.type === 'ai' || (activeRoom?.is_online && !activeRoom?.blocked_by_other && !(activeRoom?.other_user_id && currentUser?.blocked_users?.includes(activeRoom.other_user_id)))) ? 'Đang hoạt động' : ''}
               </p>
             </div>
           </div>
           
           <div className="flex items-center space-x-1">
              {/* Header More Menu */}
-             <div className="relative group/headermenu">
-                <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors font-medium">
+             <div className="relative">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveDropdown(activeDropdownId === 'header-info' ? null : 'header-info');
+                  }}
+                  className={clsx(
+                    "p-2 rounded-full transition-all font-medium",
+                    showHeaderMenu ? "bg-blue-50 text-blue-600" : "text-gray-500 hover:bg-gray-100"
+                  )}
+                >
                     <Info size={20} />
                 </button>
                 
-                <div className="absolute top-full right-0 mt-1 hidden group-hover/headermenu:block bg-white shadow-xl rounded-xl border border-gray-100 py-2 z-50 min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="px-4 py-2 border-b border-gray-50 mb-1">
-                        <p className="text-[14px] font-bold text-gray-900">Tùy chỉnh đoạn chat</p>
-                    </div>
-                    
-                    <button 
-                        onClick={() => {
-                            setViewingPinned(true);
-                        }}
-                        className="w-full flex items-center space-x-3 px-4 py-2 hover:bg-gray-50 text-[14px] text-gray-700 font-medium"
-                    >
-                        <Pin size={18} className="text-blue-500 fill-blue-500" />
-                        <span>Xem tin nhắn đã ghim</span>
-                    </button>
+                {showHeaderMenu && (
+                  <div className="absolute top-full right-0 mt-2 bg-white shadow-2xl rounded-2xl border border-gray-100 py-2 z-[100] min-w-[240px] animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+                      <div className="px-4 py-3 border-b border-gray-50 mb-1">
+                          <p className="text-[14px] font-bold text-gray-900">Tùy chỉnh đoạn chat</p>
+                      </div>
+                      
+                      <button 
+                          onClick={() => {
+                              setViewingPinned(true);
+                              setActiveDropdown(null);
+                          }}
+                          className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-gray-50 text-[14px] text-gray-700 font-medium transition-colors"
+                      >
+                          <Pin size={18} className="text-blue-500 fill-blue-500" />
+                          <span>Xem tin nhắn đã ghim ({messages.filter(m => m.is_pinned).length})</span>
+                      </button>
 
-                    <button 
-                        onClick={() => setSearchQuery(' ')}
-                        className="w-full flex items-center space-x-3 px-4 py-2 hover:bg-gray-50 text-[14px] text-gray-700"
-                    >
-                        <Search size={18} className="text-gray-400" />
-                        <span>Tìm kiếm tin nhắn</span>
-                    </button>
-                    
-                    <button 
-                        onClick={() => toggleMute()}
-                        className="w-full flex items-center space-x-3 px-4 py-2 hover:bg-gray-50 text-[14px] text-gray-700"
-                    >
-                        {isMuted ? (
-                            <>
-                                <BellOff size={18} className="text-rose-500" />
-                                <span className="text-rose-500">Bật thông báo</span>
-                            </>
-                        ) : (
-                            <>
-                                <BellOff size={18} className="text-gray-400" />
-                                <span>Tắt thông báo</span>
-                            </>
-                        )}
-                    </button>
+                      <button 
+                          onClick={() => {
+                              setSearchQuery(' ');
+                              setActiveDropdown(null);
+                          }}
+                          className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-gray-50 text-[14px] text-gray-700 transition-colors"
+                      >
+                          <Search size={18} className="text-gray-400" />
+                          <span>Tìm kiếm tin nhắn</span>
+                      </button>
+                      
+                      <button 
+                          onClick={() => {
+                              toggleMute();
+                              setActiveDropdown(null);
+                          }}
+                          className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-gray-50 text-[14px] text-gray-700 transition-colors"
+                      >
+                          {isMuted ? (
+                              <>
+                                  <BellOff size={18} className="text-rose-500" />
+                                  <span className="text-rose-500 font-medium">Bật thông báo</span>
+                              </>
+                          ) : (
+                              <>
+                                  <BellOff size={18} className="text-gray-400" />
+                                  <span>Tắt thông báo</span>
+                              </>
+                          )}
+                      </button>
 
-                    <div className="h-[1px] bg-gray-100 my-1 mx-2" />
-                    
-                    <button 
-                        onClick={() => {
-                            if (activeRoom) {
-                                setShowClearConfirm(true);
-                            }
-                        }}
-                        className="w-full flex items-center space-x-3 px-4 py-2 hover:bg-gray-50 text-[14px] text-gray-700"
-                    >
-                        <Trash2 size={18} className="text-gray-400" />
-                        <span>Xóa lịch sử trò chuyện</span>
-                    </button>
-                    
-                    <button 
-                        onClick={() => toast.success("Cảm ơn bạn đã báo cáo. Chúng tôi sẽ xử lý sớm nhất có thể!")}
-                        className="w-full flex items-center space-x-3 px-4 py-2 hover:bg-gray-50 text-[14px] text-red-500"
-                    >
-                        <Flag size={18} />
-                        <span>Báo cáo sự cố</span>
-                    </button>
+                      <div className="h-[1px] bg-gray-100 my-1 mx-2" />
+                      
+                      <button 
+                          onClick={() => {
+                              if (activeRoom) {
+                                  setShowClearConfirm(true);
+                                  setActiveDropdown(null);
+                              }
+                          }}
+                          className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-gray-50 text-[14px] text-gray-700 transition-colors"
+                      >
+                          <Trash2 size={18} className="text-gray-400" />
+                          <span>Xóa lịch sử trò chuyện</span>
+                      </button>
+                      
+                      <button 
+                          onClick={() => {
+                              toast.success("Cảm ơn bạn đã báo cáo. Chúng tôi sẽ xử lý sớm nhất có thể!");
+                              setActiveDropdown(null);
+                          }}
+                          className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-gray-50 text-[14px] text-red-500 transition-colors"
+                      >
+                          <Flag size={18} />
+                          <span>Báo cáo sự cố</span>
+                      </button>
 
-                    <div className="h-[1px] bg-gray-100 my-1 mx-2" />
-                    
-                    {currentUser?.is_superuser && (
-                        <button 
-                            onClick={onNavigateToAdmin}
-                            className="w-full flex items-center space-x-3 px-4 py-2 hover:bg-indigo-50 text-[14px] text-indigo-600 font-semibold"
-                        >
-                            <LayoutDashboard size={18} />
-                            <span>Trang quản trị hệ thống</span>
-                        </button>
-                    )}
+                      <div className="h-[1px] bg-gray-100 my-1 mx-2" />
 
-                    <button 
-                        onClick={() => logout()}
-                        className="w-full flex items-center space-x-3 px-4 py-2 hover:bg-rose-50 text-[14px] text-rose-600 font-medium"
-                    >
-                        <LogOut size={18} />
-                        <span>Đăng xuất</span>
-                    </button>
-                </div>
+                      {currentUser?.is_superuser && (
+                          <button 
+                              onClick={() => {
+                                  onNavigateToAdmin?.();
+                                  setActiveDropdown(null);
+                              }}
+                              className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-indigo-50 text-[14px] text-indigo-600 font-semibold transition-colors"
+                          >
+                              <LayoutDashboard size={18} />
+                              <span>Trang quản trị hệ thống</span>
+                          </button>
+                      )}
+
+                      <button 
+                          onClick={() => {
+                              logout();
+                              setActiveDropdown(null);
+                          }}
+                          className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-rose-50 text-[14px] text-rose-600 font-medium transition-colors"
+                      >
+                          <LogOut size={18} />
+                          <span>Đăng xuất</span>
+                      </button>
+                  </div>
+                )}
              </div>
           </div>
         </header>
@@ -197,8 +278,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
         )}
 
         {/* Message Area */}
-        <main className="flex-1 overflow-y-auto px-4 py-4">
-          <div className="max-w-4xl mx-auto flex flex-col min-h-full">
+        <main ref={mainRef} className="flex-1 overflow-y-auto px-4">
+          <div className="max-w-4xl mx-auto flex flex-col min-h-full pt-10 pb-4">
             {messages.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in duration-500">
                 <Avatar name={activeRoom?.name || '?'} size="lg" />
@@ -393,7 +474,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                 </div>
             )}
             <ChatInput onSendMessage={sendMessage} />
-        </div>
+          </div>
+        </>
+      )}
       </div>
 
       <ConfirmModal 

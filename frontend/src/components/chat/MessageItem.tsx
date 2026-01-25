@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import type { Message } from '../../types/chat';
 import { Avatar } from '../common/Avatar';
 import { useViewStore } from '../../store/useViewStore';
@@ -10,6 +10,8 @@ import DOMPurify from 'dompurify';
 import { useAuthStore } from '../../store/useAuthStore';
 import { formatChatTime } from '../../utils/time';
 import { useChatStore } from '../../store/useChatStore';
+import toast from 'react-hot-toast';
+import { getUserProfile } from '../../api/users';
 import { 
     Reply, 
     Edit2, 
@@ -48,8 +50,54 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     isLatest = false
 }) => {
   const { currentUser } = useAuthStore();
-  const { setReplyingTo, setEditingMessage, recallMessage, pinMessage, deleteMessageForMe } = useChatStore();
+  const { 
+    setReplyingTo, 
+    setEditingMessage, 
+    recallMessage, 
+    pinMessage, 
+    deleteMessageForMe, 
+    addReaction, 
+    activeDropdownId, 
+    setActiveDropdown,
+    setViewingUser 
+  } = useChatStore();
   const { setView } = useViewStore();
+  
+  const showMenu = activeDropdownId === `menu-${message.id}`;
+  const showEmoji = activeDropdownId === `emoji-${message.id}`;
+  const [menuDirection, setMenuDirection] = useState<'up' | 'down'>('up');
+
+  // Close menu on click outside
+  useEffect(() => {
+    if (!activeDropdownId) return;
+    const handleClickOutside = () => setActiveDropdown(null);
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, [activeDropdownId, setActiveDropdown]);
+
+  const handleToggleMenu = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const menuId = `menu-${message.id}`;
+    if (activeDropdownId !== menuId) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        setMenuDirection(rect.top < 250 ? 'down' : 'up');
+        setActiveDropdown(menuId);
+    } else {
+        setActiveDropdown(null);
+    }
+  };
+
+  const handleToggleEmoji = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const emojiId = `emoji-${message.id}`;
+    if (activeDropdownId !== emojiId) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        setMenuDirection(rect.top < 250 ? 'down' : 'up');
+        setActiveDropdown(emojiId);
+    } else {
+        setActiveDropdown(null);
+    }
+  };
 
   const sanitizedContent = useMemo(() => {
     return DOMPurify.sanitize(message.content);
@@ -91,11 +139,24 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     >
       <div className="w-7 shrink-0">
         {!isMe && showAvatar && (
-            <Avatar 
-                name={message.senderName} 
-                url={message.isBot ? undefined : (message as any).senderAvatar} 
-                size="sm" 
-            />
+            <div 
+                className="cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={async () => {
+                    if (message.isBot) return;
+                    try {
+                        const profile = await getUserProfile(message.senderId);
+                        setViewingUser(profile as any);
+                    } catch (error) {
+                        toast.error("Không thể tải thông tin người dùng");
+                    }
+                }}
+            >
+                <Avatar 
+                    name={message.senderName} 
+                    url={message.isBot ? undefined : (message as any).senderAvatar} 
+                    size="sm" 
+                />
+            </div>
         )}
       </div>
       
@@ -104,8 +165,19 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           isMe ? "items-end" : "items-start"
       )}>
         {!isMe && showName && (
-            <div className="flex items-center space-x-1 ml-1 mb-1">
-                <span className="text-[11px] text-gray-500 font-bold">
+            <div 
+                className="flex items-center space-x-1 ml-1 mb-1 cursor-pointer group/name"
+                onClick={async () => {
+                    if (message.isBot) return;
+                    try {
+                        const profile = await getUserProfile(message.senderId);
+                        setViewingUser(profile as any);
+                    } catch (error) {
+                        toast.error("Không thể tải thông tin người dùng");
+                    }
+                }}
+            >
+                <span className="text-[11px] text-gray-500 font-bold group-hover/name:text-blue-500 transition-colors">
                     {message.senderName}
                 </span>
                 {message.isBot && (
@@ -278,6 +350,25 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     )}
                 </div>
 
+                {/* Reaction Display (Messenger Style) */}
+                {message.reactions && Object.keys(message.reactions).length > 0 && (
+                    <div className={clsx(
+                        "absolute -bottom-2 z-10 flex flex-wrap gap-0.5",
+                        isMe ? "right-2 flex-row-reverse" : "left-2"
+                    )}>
+                        <div className="bg-white px-1.5 py-0.5 rounded-full shadow-md border border-gray-100 flex items-center space-x-1 animate-in zoom-in-50 duration-200">
+                            {Object.entries(message.reactions).map(([emoji, users]) => (
+                                <div key={emoji} className="flex items-center">
+                                    <span className="text-[14px] leading-none">{emoji}</span>
+                                    {users.length > 1 && (
+                                        <span className="text-[10px] font-bold text-gray-400 ml-0.5">{users.length}</span>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {isMe && !message.is_recalled && (
                     <div className={clsx(
                         "flex items-center mt-1 mb-1",
@@ -308,34 +399,58 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 )}
             </div>
 
-            {/* Quick Actions (Messenger style) */}
+            {/* Quick Actions (Zalo/Messenger style) */}
             {!message.is_recalled && !message.isBot && (
                 <div className={clsx(
-                    "flex opacity-0 group-hover:opacity-100 transition-opacity items-center space-x-0.5",
+                    "flex transition-opacity items-center space-x-0.5 z-[60]",
+                    (showMenu || showEmoji) ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                     isMe ? "mr-2 flex-row-reverse space-x-reverse" : "ml-2 flex-row"
                 )}>
-                    {/* Reaction Icon (Placeholder) */}
-                    <div className="relative group/emoji">
-                        <button className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 transition-colors">
+                    {/* Reaction Icon */}
+                    <div className="relative">
+                        <button 
+                            onClick={handleToggleEmoji}
+                            className={clsx(
+                                "p-1.5 rounded-full transition-colors",
+                                showEmoji ? "bg-gray-100 text-blue-600" : "hover:bg-gray-100 text-gray-400"
+                            )}
+                        >
                             <Smile size={18} />
                         </button>
                         
-                        {/* Quick Emoji Picker */}
-                        <div className={clsx(
-                            "absolute bottom-full mb-2 hidden group-hover/emoji:flex bg-white shadow-xl rounded-full border border-gray-100 p-1.5 z-50 space-x-1 animate-in fade-in zoom-in-95 duration-100",
-                            isMe ? "right-0" : "left-0"
-                        )}>
-                            {['❤️', '😆', '😮', '😢', '😠', '👍'].map(emoji => (
-                                <button key={emoji} className="hover:scale-125 transition-transform p-1 text-lg leading-none">
-                                    {emoji}
-                                </button>
-                            ))}
-                        </div>
+                        {/* Quick Emoji Picker (Zalo Style) */}
+                        {showEmoji && (
+                            <div className={clsx(
+                                "absolute flex bg-white shadow-2xl rounded-full border border-gray-100 p-1 z-[110] space-x-1 animate-in fade-in zoom-in-95 duration-200 min-w-[200px] justify-center",
+                                menuDirection === 'up' ? "bottom-full mb-2" : "top-full mt-2",
+                                isMe ? "right-0" : "left-0",
+                                menuDirection === 'up' 
+                                    ? (isMe ? "origin-bottom-right" : "origin-bottom-left")
+                                    : (isMe ? "origin-top-right" : "origin-top-left")
+                            )}>
+                                {['❤️', '😆', '😮', '😢', '😠', '👍'].map(emoji => (
+                                    <button 
+                                        key={emoji} 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            addReaction(message.id, emoji);
+                                            setActiveDropdown(null);
+                                        }}
+                                        className="hover:scale-150 active:scale-95 transition-all p-1.5 text-xl leading-none hover:bg-gray-50 rounded-full"
+                                    >
+                                        {emoji}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     
                     {/* Reply Icon */}
                     <button 
-                        onClick={() => setReplyingTo(message)}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setReplyingTo(message);
+                        }}
                         className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 transition-colors"
                         title="Trả lời"
                     >
@@ -343,64 +458,94 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     </button>
                     
                     {/* More Menu Dropdown */}
-                    <div className="relative group/menu">
-                        <button className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 transition-colors">
+                    <div className="relative">
+                        <button 
+                            onClick={handleToggleMenu}
+                            className={clsx(
+                                "p-1.5 rounded-full transition-colors",
+                                showMenu ? "bg-gray-100 text-blue-600" : "hover:bg-gray-100 text-gray-400"
+                            )}
+                        >
                             <MoreHorizontal size={18} />
                         </button>
                         
                         {/* Dropdown Content */}
-                        <div className={clsx(
-                            "absolute bottom-full mb-2 hidden group-hover/menu:block bg-white shadow-xl rounded-xl border border-gray-100 py-1.5 z-50 min-w-[140px] animate-in fade-in zoom-in-95 duration-100",
-                            isMe ? "right-0 origin-bottom-right" : "left-0 origin-bottom-left"
-                        )}>
-                            <button 
-                                onClick={() => {
-                                    navigator.clipboard.writeText(message.content);
-                                    // Optional: toast notification
-                                }}
-                                className="w-full flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 text-[13px] text-gray-700"
-                            >
-                                <Copy size={16} />
-                                <span>Sao chép</span>
-                            </button>
+                        {showMenu && (
+                            <div className={clsx(
+                                "absolute bg-white shadow-xl rounded-xl border border-gray-100 py-1.5 z-[100] min-w-[160px] animate-in fade-in zoom-in-95 duration-100",
+                                menuDirection === 'up' ? "bottom-full mb-2" : "top-full mt-2",
+                                isMe ? "right-0" : "left-0",
+                                menuDirection === 'up' 
+                                    ? (isMe ? "origin-bottom-right" : "origin-bottom-left")
+                                    : (isMe ? "origin-top-right" : "origin-top-left")
+                            )}>
+                                <button 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigator.clipboard.writeText(message.content);
+                                        toast.success("Đã sao chép tin nhắn");
+                                        setActiveDropdown(null);
+                                    }}
+                                    className="w-full flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 text-[13px] text-gray-700 transition-colors"
+                                >
+                                    <Copy size={16} />
+                                    <span>Sao chép</span>
+                                </button>
 
-                            <button 
-                                onClick={() => pinMessage(message.id)}
-                                className="w-full flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 text-[13px] text-gray-700 font-medium"
-                            >
-                                <Pin size={16} className={message.is_pinned ? "text-blue-500 fill-blue-500" : ""} />
-                                <span>{message.is_pinned ? "Bỏ ghim" : "Ghim"}</span>
-                            </button>
+                                <button 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        pinMessage(message.id);
+                                        setActiveDropdown(null);
+                                    }}
+                                    className="w-full flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 text-[13px] text-gray-700 font-medium transition-colors"
+                                >
+                                    <Pin size={16} className={message.is_pinned ? "text-blue-500 fill-blue-500" : ""} />
+                                    <span>{message.is_pinned ? "Bỏ ghim" : "Ghim"}</span>
+                                </button>
 
-                            <div className="h-[1px] bg-gray-100 my-1 mx-2" />
+                                <div className="h-[1px] bg-gray-100 my-1 mx-2" />
 
-                            <button 
-                                onClick={() => deleteMessageForMe(message.id)}
-                                className="w-full flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 text-[13px] text-red-500 group/recall"
-                            >
-                                <Trash2 size={16} />
-                                <span>Gỡ ở phía bạn</span>
-                            </button>
+                                <button 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        deleteMessageForMe(message.id);
+                                        setActiveDropdown(null);
+                                    }}
+                                    className="w-full flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 text-[13px] text-red-500 transition-colors"
+                                >
+                                    <Trash2 size={16} />
+                                    <span>Gỡ ở phía bạn</span>
+                                </button>
 
-                            {isMe && !message.is_recalled && (
-                                <>
-                                    <button 
-                                        onClick={() => setEditingMessage(message)}
-                                        className="w-full flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 text-[13px] text-gray-700"
-                                    >
-                                        <Edit2 size={16} />
-                                        <span>Chỉnh sửa</span>
-                                    </button>
-                                    <button 
-                                        onClick={() => recallMessage(message.id)}
-                                        className="w-full flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 text-[13px] text-red-600 font-semibold"
-                                    >
-                                        <RotateCcw size={16} />
-                                        <span>Thu hồi</span>
-                                    </button>
-                                </>
-                            )}
-                        </div>
+                                {isMe && !message.is_recalled && (
+                                    <>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setEditingMessage(message);
+                                                setActiveDropdown(null);
+                                            }}
+                                            className="w-full flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 text-[13px] text-gray-700 transition-colors"
+                                        >
+                                            <Edit2 size={16} />
+                                            <span>Chỉnh sửa</span>
+                                        </button>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                recallMessage(message.id);
+                                                setActiveDropdown(null);
+                                            }}
+                                            className="w-full flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 text-[13px] text-red-600 font-semibold transition-colors"
+                                        >
+                                            <RotateCcw size={16} />
+                                            <span>Thu hồi</span>
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

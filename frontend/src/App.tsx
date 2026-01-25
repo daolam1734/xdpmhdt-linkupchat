@@ -4,6 +4,7 @@ import { useChatStore } from './store/useChatStore'
 import { useViewStore } from './store/useViewStore'
 import { ChatPage } from './pages/ChatPage'
 import { AuthPage } from './pages/AuthPage'
+import { LandingPage } from './pages/LandingPage'
 import { AdminPage } from './pages/AdminPage'
 import { MessageCircle } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
@@ -21,9 +22,9 @@ function App() {
     if (token && currentUser) {
         fetchRooms();
         connect(token);
+        setView('chat');
     } else {
         disconnect();
-        setView('chat');
     }
   }, [token, currentUser, fetchRooms, connect, disconnect, setView]);
 
@@ -54,7 +55,11 @@ function App() {
       );
     }
 
-    return <AuthPage />;
+    if (currentView === 'auth') {
+        return <AuthPage onBack={() => setView('landing')} />;
+    }
+
+    return <LandingPage onStart={() => setView('auth')} onLogin={() => setView('auth')} />;
   };
 
   return (

@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class UserBase(BaseModel):
@@ -14,7 +14,10 @@ class UserUpdate(BaseModel):
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
     allow_stranger_messages: Optional[bool] = None
+    show_online_status: Optional[bool] = None
     ai_preferences: Optional[dict] = None
+    app_settings: Optional[dict] = None
+    ai_settings: Optional[dict] = None
 
 class User(UserBase):
     id: str
@@ -23,7 +26,16 @@ class User(UserBase):
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
     allow_stranger_messages: bool = True
+    show_online_status: bool = True
     ai_preferences: Optional[dict] = None
+    app_settings: Optional[dict] = None
+    ai_settings: Optional[dict] = None
+    message_count: Optional[int] = 0
+    friend_count: Optional[int] = 0
+    blocked_users: List[str] = []
+    blocked_by: List[str] = []
+    is_online: bool = False
+    last_seen: Optional[datetime] = None
     created_at: datetime
 
     class Config:

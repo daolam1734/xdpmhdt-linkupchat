@@ -7,6 +7,7 @@ class RoomBase(BaseModel):
     name: str
     icon: Optional[str] = "hash"
     type: str = "public"
+    other_user_id: Optional[str] = None
     updated_at: Optional[datetime] = None
     avatar_url: Optional[str] = None
     is_online: Optional[bool] = False
@@ -15,6 +16,7 @@ class RoomBase(BaseModel):
     last_message_id: Optional[str] = None
     last_message_sender: Optional[str] = None
     last_message_at: Optional[datetime] = None
+    blocked_by_other: bool = False
 
 class RoomCreate(RoomBase):
     pass

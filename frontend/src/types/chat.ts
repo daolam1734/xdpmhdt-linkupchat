@@ -12,12 +12,26 @@ export interface User {
   request_sent?: boolean;
   allow_stranger_messages?: boolean;
   is_superuser?: boolean;
+  message_count?: number;
+  friend_count?: number;
+  blocked_users?: string[];
+  blocked_by?: string[];
+  app_settings?: {
+    theme?: 'light' | 'dark';
+    language?: 'vi' | 'en';
+    notifications?: boolean;
+  };
+  ai_settings?: {
+    context_access?: boolean;
+    personalized_training?: boolean;
+  };
 }
 
 export interface Room {
   id: string;
   name: string;
   type: 'public' | 'private' | 'ai' | 'direct';
+  other_user_id?: string;
   icon?: string;
   avatar_url?: string;
   is_online?: boolean;
@@ -27,6 +41,7 @@ export interface Room {
   last_message_sender?: string;
   last_message_at?: string;
   updated_at?: string;
+  blocked_by_other?: boolean;
 }
 
 export interface Message {

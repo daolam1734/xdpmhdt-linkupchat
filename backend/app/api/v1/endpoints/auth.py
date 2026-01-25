@@ -35,10 +35,46 @@ async def login(
     }
 
 @router.get("/me", response_model=UserSchema)
-async def read_users_me(current_user: dict = Depends(get_current_user)) -> Any:
+async def read_users_me(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+) -> Any:
     """
-    Lấy thông tin profile cá nhân.
+    Lấy thông tin profile cá nhân kèm theo thống kê.
     """
+    # Tính số tin nhắn đã gửi
+    message_count = await db["messages"].count_documents({"sender_id": current_user["id"]})
+    
+    # Tính số bạn bè
+    friend_count = await db["friend_requests"].count_documents({
+        "$or": [
+            {"from_id": current_user["id"], "status": "accepted"},
+            {"to_id": current_user["id"], "status": "accepted"}
+        ]
+    })
+    
+    # Cập nhật thông tin vào dict trả về
+    # Chuyển đổi _id sang string nếu có và loại bỏ để tránh lỗi serialize
+    if "_id" in current_user:
+        current_user["_id"] = str(current_user["_id"])
+        
+    current_user["message_count"] = message_count
+    current_user["friend_count"] = friend_count
+    
+    # Đảm bảo các trường privacy/mới luôn có mặt
+    if "blocked_users" not in current_user or current_user["blocked_users"] is None:
+        current_user["blocked_users"] = []
+    if "show_online_status" not in current_user:
+        current_user["show_online_status"] = True
+    if "is_online" not in current_user:
+        current_user["is_online"] = True
+    if "allow_stranger_messages" not in current_user:
+        current_user["allow_stranger_messages"] = True
+    
+    # Lấy danh sách những người đã chặn tôi
+    blocked_by_query = await db["users"].find({"blocked_users": current_user["id"]}).to_list(length=1000)
+    current_user["blocked_by"] = [u["id"] for u in blocked_by_query]
+    
     return current_user
 
 @router.patch("/me", response_model=UserSchema)
@@ -71,14 +107,53 @@ async def update_user_me(
         
     if user_in.allow_stranger_messages is not None:
         update_data["allow_stranger_messages"] = user_in.allow_stranger_messages
+        
+    if user_in.show_online_status is not None:
+        update_data["show_online_status"] = user_in.show_online_status
+        # Notify friends about status change if already online
+        if current_user.get("is_online"):
+            try:
+                from backend.app.api.v1.endpoints.websocket import notify_user_status_change
+                await notify_user_status_change(current_user["id"], user_in.show_online_status)
+            except Exception as e:
+                print(f"Error notifying status change: {e}")
     
     if user_in.ai_preferences is not None:
         update_data["ai_preferences"] = user_in.ai_preferences
+        
+    if user_in.app_settings is not None:
+        update_data["app_settings"] = user_in.app_settings
+        
+    if user_in.ai_settings is not None:
+        update_data["ai_settings"] = user_in.ai_settings
     
     if update_data:
         await db["users"].update_one({"id": current_user["id"]}, {"$set": update_data})
         # Update current_user dict for returning
         current_user.update(update_data)
+        
+    # Thêm thống kê cho kết quả trả về
+    # Chuyển đổi _id sang string nếu có và loại bỏ để tránh lỗi serialize
+    if "_id" in current_user:
+        current_user["_id"] = str(current_user["_id"])
+        
+    current_user["message_count"] = await db["messages"].count_documents({"sender_id": current_user["id"]})
+    current_user["friend_count"] = await db["friend_requests"].count_documents({
+        "$or": [
+            {"from_id": current_user["id"], "status": "accepted"},
+            {"to_id": current_user["id"], "status": "accepted"}
+        ]
+    })
+    
+    # Đảm bảo các trường privacy/mới luôn có mặt
+    if "blocked_users" not in current_user or current_user["blocked_users"] is None:
+        current_user["blocked_users"] = []
+    if "show_online_status" not in current_user:
+        current_user["show_online_status"] = True
+    if "is_online" not in current_user:
+        current_user["is_online"] = True
+    if "allow_stranger_messages" not in current_user:
+        current_user["allow_stranger_messages"] = True
         
     return current_user
 

@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { Message, Room } from '../types/chat';
 import { chatService } from '../services/chat.service';
+import { useAuthStore } from './useAuthStore';
+import { toast } from 'react-hot-toast';
 
 interface ChatState {
     rooms: Room[];
@@ -17,9 +19,12 @@ interface ChatState {
     searchQuery: string;
     isViewingPinned: boolean;
     isAiTyping: boolean;
+    activeDropdownId: string | null; // ID of the currently open dropdown
+    viewingUser: User | null; // Profile view state
 
     fetchRooms: () => Promise<void>;
-    setActiveRoom: (room: Room) => Promise<void>;
+    setActiveRoom: (room: Room | null) => Promise<void>;
+    setViewingUser: (user: User | null) => void;
     connect: (token: string) => void;
     disconnect: () => void;
     sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }) => boolean;
@@ -27,6 +32,7 @@ interface ChatState {
     recallMessage: (messageId: string) => void;
     deleteMessageForMe: (messageId: string) => void;
     pinMessage: (messageId: string) => void;
+    addReaction: (messageId: string, emoji: string) => void;
     setReplyingTo: (msg: Message | null) => void;
     setEditingMessage: (msg: Message | null) => void;
     addMessage: (msg: Message) => void;
@@ -40,6 +46,7 @@ interface ChatState {
     toggleMute: () => void;
     setViewingPinned: (val: boolean) => void;
     dismissSuggestions: (messageId: string) => void;
+    setActiveDropdown: (id: string | null) => void;
 }
 
 const RECONNECT_INTERVALS = [1000, 2000, 5000, 10000];
@@ -72,6 +79,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         searchQuery: '',
         isViewingPinned: false,
         isAiTyping: false,
+        activeDropdownId: null,
+        viewingUser: null,
 
         fetchRooms: async () => {
             set({ isLoading: true });
@@ -86,7 +95,7 @@ export const useChatStore = create<ChatState>((set, get) => {
                     return timeB - timeA;
                 });
                 set({ rooms: sortedRooms });
-                if (sortedRooms.length > 0 && !get().activeRoom) {
+                if (sortedRooms.length > 0 && !get().activeRoom && !get().viewingUser) {
                     get().setActiveRoom(sortedRooms[0]);
                 }
             } catch (error) {
@@ -96,8 +105,12 @@ export const useChatStore = create<ChatState>((set, get) => {
             }
         },
 
-        setActiveRoom: async (room: Room) => {
-            set({ activeRoom: room, messages: [], isLoading: true });
+        setActiveRoom: async (room: Room | null) => {
+            if (!room) {
+                set({ activeRoom: null, messages: [] });
+                return;
+            }
+            set({ activeRoom: room, messages: [], isLoading: true, viewingUser: null });
             get().sendReadReceipt(room.id);
             try {
                 const response = await chatService.getMessages(room.id);
@@ -124,6 +137,8 @@ export const useChatStore = create<ChatState>((set, get) => {
                 set({ isLoading: false });
             }
         },
+
+        setViewingUser: (user: User | null) => set({ viewingUser: user }),
 
         addMessage: (msg: Message) => {
             set((state) => {
@@ -167,6 +182,10 @@ export const useChatStore = create<ChatState>((set, get) => {
                 }
 
                 const sortedRooms = [...updatedRooms].sort((a, b) => {
+                    // Ưu tiên các phòng được ghim
+                    if (a.is_pinned && !b.is_pinned) return -1;
+                    if (!a.is_pinned && b.is_pinned) return 1;
+                    // Sắp xếp theo thời gian cập nhật mới nhất
                     const timeA = new Date(a.updated_at || 0).getTime();
                     const timeB = new Date(b.updated_at || 0).getTime();
                     return timeB - timeA;
@@ -292,6 +311,136 @@ export const useChatStore = create<ChatState>((set, get) => {
                             )
                         }));
                         break;
+                    case 'user_status_change':
+                        set(state => {
+                            const updatedRooms = state.rooms.map(room => {
+                                if (room.type === 'direct' && room.id.includes(data.user_id)) {
+                                    return { ...room, is_online: data.is_online };
+                                }
+                                return room;
+                            });
+
+                            let updatedActiveRoom = state.activeRoom;
+                            if (updatedActiveRoom && updatedActiveRoom.type === 'direct' && updatedActiveRoom.id.includes(data.user_id)) {
+                                updatedActiveRoom = { ...updatedActiveRoom, is_online: data.is_online };
+                            }
+
+                            let updatedViewingUser = state.viewingUser;
+                            if (updatedViewingUser && updatedViewingUser.id === data.user_id) {
+                                updatedViewingUser = { ...updatedViewingUser, is_online: data.is_online };
+                            }
+
+                            return {
+                                rooms: updatedRooms,
+                                activeRoom: updatedActiveRoom,
+                                viewingUser: updatedViewingUser
+                            };
+                        });
+                        break;
+                    case 'user_blocked_me':
+                        // Cập nhật trạng thái bị chặn vào AuthStore
+                        const authStore = useAuthStore.getState();
+                        if (authStore.currentUser) {
+                            const blockedBy = authStore.currentUser.blocked_by || [];
+                            if (!blockedBy.includes(data.by_user_id)) {
+                                useAuthStore.setState({
+                                    currentUser: {
+                                        ...authStore.currentUser,
+                                        blocked_by: [...blockedBy, data.by_user_id]
+                                    }
+                                });
+                            }
+                        }
+                        
+                        set(state => {
+                            // Cập nhật trong danh sách rooms
+                            const updatedRooms = state.rooms.map(room => {
+                                if (room.other_user_id === data.by_user_id || room.id.includes(data.by_user_id)) {
+                                    return { ...room, blocked_by_other: true, is_online: false };
+                                }
+                                return room;
+                            });
+
+                            // Cập nhật trạng thái chặn trong activeRoom nếu đang chat với người đó
+                            let updatedActiveRoom = state.activeRoom;
+                            if (updatedActiveRoom && (updatedActiveRoom.other_user_id === data.by_user_id || updatedActiveRoom.id.includes(data.by_user_id))) {
+                                updatedActiveRoom = { ...updatedActiveRoom, blocked_by_other: true, is_online: false };
+                                toast.error("Bạn hiện không thể gửi tin nhắn cho người dùng này");
+                            }
+
+                            return { 
+                                rooms: updatedRooms,
+                                activeRoom: updatedActiveRoom
+                            };
+                        });
+                        break;
+                    case 'user_unblocked_me':
+                        // Cập nhật trạng thái bỏ chặn vào AuthStore
+                        const authStoreUnblock = useAuthStore.getState();
+                        if (authStoreUnblock.currentUser && authStoreUnblock.currentUser.blocked_by) {
+                            useAuthStore.setState({
+                                currentUser: {
+                                    ...authStoreUnblock.currentUser,
+                                    blocked_by: authStoreUnblock.currentUser.blocked_by.filter(id => id !== data.by_user_id)
+                                }
+                            });
+                        }
+
+                        set(state => {
+                            const updatedRooms = state.rooms.map(room => {
+                                if (room.other_user_id === data.by_user_id || room.id.includes(data.by_user_id)) {
+                                    return { ...room, blocked_by_other: false };
+                                }
+                                return room;
+                            });
+
+                            let updatedActiveRoom = state.activeRoom;
+                            if (updatedActiveRoom && (updatedActiveRoom.other_user_id === data.by_user_id || updatedActiveRoom.id.includes(data.by_user_id))) {
+                                updatedActiveRoom = { ...updatedActiveRoom, blocked_by_other: false };
+                                toast.success("Bạn đã được bỏ chặn");
+                            }
+
+                            return { 
+                                rooms: updatedRooms,
+                                activeRoom: updatedActiveRoom
+                            };
+                        });
+                        break;
+                    case 'user_i_blocked':
+                        const authStoreIBlocked = useAuthStore.getState();
+                        if (authStoreIBlocked.currentUser) {
+                            const blockedUsers = authStoreIBlocked.currentUser.blocked_users || [];
+                            if (!blockedUsers.includes(data.target_user_id)) {
+                                useAuthStore.setState({
+                                    currentUser: {
+                                        ...authStoreIBlocked.currentUser,
+                                        blocked_users: [...blockedUsers, data.target_user_id]
+                                    }
+                                });
+                            }
+                        }
+                        // Cập nhật trạng thái is_online trong danh sách chat cho session này
+                        set(state => {
+                            const updatedRooms = state.rooms.map(room => {
+                                if (room.other_user_id === data.target_user_id || room.id.includes(data.target_user_id)) {
+                                    return { ...room, is_online: false };
+                                }
+                                return room;
+                            });
+                            return { rooms: updatedRooms };
+                        });
+                        break;
+                    case 'user_i_unblocked':
+                        const authStoreIUnblocked = useAuthStore.getState();
+                        if (authStoreIUnblocked.currentUser && authStoreIUnblocked.currentUser.blocked_users) {
+                            useAuthStore.setState({
+                                currentUser: {
+                                    ...authStoreIUnblocked.currentUser,
+                                    blocked_users: authStoreIUnblocked.currentUser.blocked_users.filter(id => id !== data.target_user_id)
+                                }
+                            });
+                        }
+                        break;
                     case 'ai_suggestion':
                         set({ 
                             aiSuggestion: { 
@@ -374,6 +523,8 @@ export const useChatStore = create<ChatState>((set, get) => {
                                     ? { ...room, updated_at: data.timestamp || room.updated_at }
                                     : room
                             ).sort((a, b) => {
+                                if (a.is_pinned && !b.is_pinned) return -1;
+                                if (!a.is_pinned && b.is_pinned) return 1;
                                 const timeA = new Date(a.updated_at || 0).getTime();
                                 const timeB = new Date(b.updated_at || 0).getTime();
                                 return timeB - timeA;
@@ -491,6 +642,41 @@ export const useChatStore = create<ChatState>((set, get) => {
             }
         },
 
+        addReaction: (messageId: string, emoji: string) => {
+            const { socket, activeRoom } = get();
+            const currentUserId = useAuthStore.getState().currentUser?.id;
+
+            if (socket && socket.readyState === WebSocket.OPEN && activeRoom) {
+                socket.send(JSON.stringify({
+                    type: 'reaction',
+                    message_id: messageId,
+                    room_id: activeRoom.id,
+                    emoji: emoji
+                }));
+            }
+
+            if (!currentUserId) return;
+
+            // Local update for immediate feedback
+            set((state) => ({
+                messages: state.messages.map(m => {
+                    if (m.id === messageId) {
+                        const reactions = { ...(m.reactions || {}) };
+                        const users = [...(reactions[emoji] || [])];
+                        
+                        if (users.includes(currentUserId)) {
+                            reactions[emoji] = users.filter(u => u !== currentUserId);
+                            if (reactions[emoji].length === 0) delete reactions[emoji];
+                        } else {
+                            reactions[emoji] = [...users, currentUserId];
+                        }
+                        return { ...m, reactions };
+                    }
+                    return m;
+                })
+            }));
+        },
+
         setReplyingTo: (msg: Message | null) => set({ replyingTo: msg }),
         setEditingMessage: (msg: Message | null) => set({ editingMessage: msg }),
 
@@ -533,7 +719,9 @@ export const useChatStore = create<ChatState>((set, get) => {
                     ).sort((a, b) => {
                         if (a.is_pinned && !b.is_pinned) return -1;
                         if (!a.is_pinned && b.is_pinned) return 1;
-                        return 0;
+                        const timeA = new Date(a.updated_at || 0).getTime();
+                        const timeB = new Date(b.updated_at || 0).getTime();
+                        return timeB - timeA;
                     })
                 }));
             } catch (error) {
@@ -579,5 +767,7 @@ export const useChatStore = create<ChatState>((set, get) => {
                 ),
             }));
         },
+
+        setActiveDropdown: (id: string | null) => set({ activeDropdownId: id }),
     };
 });

@@ -9,7 +9,7 @@ from backend.app.db.init_db import init_db
 app = FastAPI(
     title="LinkUp API",
     description="""
-    Hệ thống LinkUp: Nơi mọi cuộc trò chuyện bắt đầu.
+    Hệ thống LinkUp: Nền tảng kết nối cộng đồng và Trí tuệ nhân tạo.
     
     ### Chat nhanh – Kết nối thật – AI hỗ trợ
     """,

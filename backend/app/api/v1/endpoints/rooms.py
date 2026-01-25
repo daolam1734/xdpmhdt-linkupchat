@@ -88,16 +88,26 @@ async def get_rooms(
                 if other_user:
                     other_name = other_user["username"]
                     other_avatar = other_user.get("avatar_url")
-                    is_online = other_user.get("is_online", False)
+                    # Ràng buộc: Chỉ hiển thị online nếu user đó cho phép và KHÔNG có quan hệ chặn
+                    is_online = other_user.get("is_online", False) and other_user.get("show_online_status", True)
+                    
+                    if other_user["id"] in current_user.get("blocked_users", []):
+                        is_online = False
+                    
+                    blocked_by_other = current_user["id"] in other_user.get("blocked_users", [])
+                    if blocked_by_other:
+                        is_online = False
             
             room_data = {
                 "id": room["id"],
                 "name": other_name,
                 "type": room["type"],
+                "other_user_id": other_member["user_id"] if other_member else None,
                 "icon": room.get("icon"),
                 "avatar_url": other_avatar,
                 "is_online": is_online,
                 "is_pinned": is_pinned,
+                "blocked_by_other": blocked_by_other if other_member else False,
                 "updated_at": room.get("updated_at"),
                 "last_message": last_message_content,
                 "last_message_id": last_message_id,

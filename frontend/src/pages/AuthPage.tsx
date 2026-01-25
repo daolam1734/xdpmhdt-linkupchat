@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
-import { Eye, EyeOff, CheckCircle2, MessageCircle } from 'lucide-react';
+import { Eye, EyeOff, CheckCircle2, MessageCircle, ArrowLeft } from 'lucide-react';
 
-export const AuthPage: React.FC = () => {
+interface AuthPageProps {
+    onBack?: () => void;
+}
+
+export const AuthPage: React.FC<AuthPageProps> = ({ onBack }) => {
     const [isLogin, setIsLogin] = useState(true);
     const [showPassword, setShowPassword] = useState(false);
     const [username, setUsername] = useState('');
@@ -36,7 +40,16 @@ export const AuthPage: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-[#F0F2F5] flex flex-col items-center justify-center p-4 font-sans">
+        <div className="min-h-screen bg-[#F0F2F5] flex flex-col items-center justify-center p-4 font-sans relative">
+            {onBack && (
+                <button 
+                    onClick={onBack}
+                    className="absolute top-8 left-8 flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors font-semibold py-2 px-4 rounded-xl hover:bg-white shadow-sm"
+                >
+                    <ArrowLeft size={20} />
+                    Quay lại trang chủ
+                </button>
+            )}
             <div className="mb-10 flex flex-col items-center">
                 <div className="w-20 h-20 bg-gradient-to-tr from-[#0064FF] to-[#00B2FF] rounded-3xl flex items-center justify-center shadow-lg shadow-blue-200 mb-4">
                     <MessageCircle size={48} className="text-white fill-white" />

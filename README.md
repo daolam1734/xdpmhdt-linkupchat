@@ -3,6 +3,7 @@
 LinkUp là một nền tảng chat thời gian thực hiện đại, được thiết kế đặc biệt cho các cộng đồng trực tuyến. Nơi mọi người có thể kết nối, thảo luận và nhận hỗ trợ từ trí tuệ nhân tạo (AI) một cách liền mạch.
 
 ## ✨ Tính năng nổi bật
+- **Landing Page hiện đại**: Trang giới thiệu chuyên nghiệp, mô phỏng các nền tảng mạng xã hội và startup công nghệ.
 - **Chat thời gian thực**: Hội thoại nhóm (Public) và Chat riêng tư (Direct Message).
 - **AI Assistant**: Trợ lý thông minh hỗ trợ giải đáp, tóm tắt, dịch thuật và viết lại tin nhắn.
 - **AI Memory (Ký ức nhẹ)**: Ghi nhớ sở thích cá nhân của người dùng để tùy chỉnh phản hồi AI.
@@ -34,61 +35,48 @@ git clone https://github.com/daolam1734/xdpmhdt-linkupchat.git
 cd xdpmhdt-linkupchat
 ```
 
-### 3. Cấu hình Backend
-Di chuyển vào thư mục backend và thiết lập môi trường ảo:
+### 3. Khởi động nhanh (Khuyên dùng trên Windows)
+
+Tôi đã tạo sẵn các script để tự động cài đặt và chạy ứng dụng một cách nhanh nhất:
+
+*   **Để chạy Backend:** Click chuột phải vào `run_backend.ps1` -> `Run with PowerShell`.
+*   **Để chạy Frontend:** Click chuột phải vào `run_frontend.ps1` -> `Run with PowerShell`.
+
+Nếu đây là lần đầu chạy, script sẽ tự động tạo file `.env` và cài đặt các thư viện cần thiết. Bạn chỉ cần mở file `backend/.env` và điền `MONGODB_URL` và `GOOGLE_API_KEY`.
+
+### 4. Cài đặt thủ công (Nếu script không chạy)
+
+#### Cấu hình Backend:
 ```bash
 cd backend
 python -m venv .venv
-
-# Kích hoạt môi trường ảo (Windows)
-.venv\Scripts\activate
-
-# Kích hoạt môi trường ảo (Linux/Mac)
-source .venv/bin/activate
-
-# Cài đặt các thư viện cần thiết
+# Kích hoạt .venv (Windows: .venv\Scripts\activate | Linux: source .venv/bin/activate)
 pip install -r requirements.txt
-
-# Khởi tạo Database (Tạo các phòng mặc định và Index)
-python -m app.db.init_db
 ```
 
-### 4. Cấu hình Frontend
-Di chuyển vào thư mục frontend và cài đặt dependencies:
+#### Cấu hình Frontend:
 ```bash
-cd ../frontend
+cd frontend
 npm install
 ```
 
 ### 5. Thiết lập biến môi trường (.env)
-Tạo file `.env` tại thư mục gốc của toàn dự án (root):
+Tạo file `.env` tại thư mục `backend/`:
 ```dotenv
-# Google Gemini API Key
-GOOGLE_API_KEY=AIzaSy... (Lấy tại aistudio.google.com)
+# Lấy tại aistudio.google.com
+GOOGLE_API_KEY=your_key_here
 
-# MongoDB Config (Atlas)
-MONGODB_URL=mongodb+srv://... (Link kết nối database)
+# Link kết nối database MongoDB Atlas
+MONGODB_URL=mongodb+srv://... 
 MONGODB_DB=linkupchat
-
-# Security
-SECRET_KEY=yoursecretkeyhere
-ALGORITHM=HS256
 ```
 
 ### 6. Chạy ứng dụng
 
-#### Khởi động Backend (Mở terminal 1):
-```bash
-cd backend
-uvicorn app.main:app --reload --port 8000
-```
-
-#### Khởi động Frontend (Mở terminal 2):
-```bash
-cd frontend
-npm run dev
-```
-Truy cập ứng dụng tại: `http://localhost:5173`
+| Thành phần | Câu lệnh | URL |
+| :--- | :--- | :--- |
+| **Backend** | `uvicorn backend.app.main:app --reload` | `http://localhost:8000` |
+| **Frontend** | `npm run dev` (trong folder frontend) | `http://localhost:5173` |
 
 ---
 

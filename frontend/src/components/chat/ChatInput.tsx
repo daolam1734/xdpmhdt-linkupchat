@@ -17,9 +17,31 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { replyingTo, setReplyingTo, editingMessage, setEditingMessage, editMessage, uploadFile, activeRoom } = useChatStore();
-  const { currentUser, updateProfile } = useAuthStore();
+  const { currentUser, updateProfile, unblockUser: unblockUserStore } = useAuthStore();
 
   const isAiRoom = activeRoom?.type === 'ai' || activeRoom?.id === 'ai' || activeRoom?.id === 'help';
+  
+  // Real-time block detection using both activeRoom state and currentUser block lists
+  const isBlockedByMe = activeRoom?.type === 'direct' && activeRoom.other_user_id && 
+    currentUser?.blocked_users?.includes(activeRoom.other_user_id);
+    
+  const isBlockedByOther = activeRoom?.type === 'direct' && activeRoom.other_user_id && (
+    activeRoom.blocked_by_other || 
+    currentUser?.blocked_by?.includes(activeRoom.other_user_id)
+  );
+
+  const isBlocked = isBlockedByMe || isBlockedByOther;
+
+  const handleUnblock = async () => {
+    if (activeRoom?.other_user_id) {
+        try {
+            await unblockUserStore(activeRoom.other_user_id);
+            toast.success("Đã bỏ chặn người dùng");
+        } catch (error) {
+            toast.error("Không thể bỏ chặn");
+        }
+    }
+  };
 
   useEffect(() => {
     if (editingMessage) {
@@ -46,6 +68,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
   };
 
   const handleSend = () => {
+    if (isBlocked) {
+        toast.error("Bạn không thể thực hiện hành động này");
+        return;
+    }
     if (editingMessage) {
         if (text.trim() && text !== editingMessage.content) {
             editMessage(editingMessage.id, text);
@@ -73,6 +99,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isBlocked) {
+        toast.error("Bạn không thể thực hiện hành động này");
+        return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -117,11 +147,29 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
 
   return (
     <div className="flex flex-col bg-white border-t border-gray-100">
-        {/* AI Modes (Meta Style) - Available in all rooms */}
-        <div className={clsx(
-            "flex flex-col border-b border-gray-50",
-            isAiRoom ? "bg-purple-50/30" : "bg-gray-50/20"
-        )}>
+        {isBlocked ? (
+            <div className="p-4 bg-gray-50 flex flex-col items-center justify-center space-y-2">
+                <p className="text-gray-500 font-medium text-[14px]">
+                    {isBlockedByMe 
+                        ? "Bạn đã chặn người dùng này." 
+                        : "Bạn hiện không thể gửi tin nhắn cho người dùng này vì họ đã chặn bạn."}
+                </p>
+                {isBlockedByMe && (
+                    <button 
+                        onClick={handleUnblock}
+                        className="text-blue-600 font-bold text-sm hover:underline active:scale-95 transition-all"
+                    >
+                        Bỏ chặn để gửi tin nhắn
+                    </button>
+                )}
+            </div>
+        ) : (
+            <>
+                {/* AI Modes (Meta Style) - Available in all rooms */}
+                <div className={clsx(
+                    "flex flex-col border-b border-gray-50",
+                    isAiRoom ? "bg-purple-50/30" : "bg-gray-50/20"
+                )}>
             <div className="flex items-center space-x-2 px-4 py-2 overflow-x-auto no-scrollbar scroll-smooth">
                 {isAiRoom && (
                     <>
@@ -329,6 +377,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
             </button>
         </div>
     </div>
+    </>
+    )}
     </div>
   );
 };

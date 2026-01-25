@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { authService } from '../services/auth.service';
 import { setAuthToken } from '../services/api';
+import { blockUser, unblockUser } from '../api/users';
 import type { User } from '../types/chat';
 
 interface AuthState {
@@ -13,6 +14,8 @@ interface AuthState {
     signup: (username: string, password: string) => Promise<void>;
     logout: () => void;
     fetchCurrentUser: () => Promise<void>;
+    blockUser: (userId: string) => Promise<void>;
+    unblockUser: (userId: string) => Promise<void>;
     updateProfile: (data: { 
         username?: string; 
         avatar_url?: string; 
@@ -22,7 +25,16 @@ interface AuthState {
             preferred_style?: 'short' | 'balanced' | 'detailed';
             coding_frequency?: 'low' | 'medium' | 'high';
             language?: 'vi' | 'en';
-        }
+        };
+        app_settings?: {
+            theme?: 'light' | 'dark';
+            language?: 'vi' | 'en';
+            notifications?: boolean;
+        };
+        ai_settings?: {
+            context_access?: boolean;
+            personalized_training?: boolean;
+        };
     }) => Promise<void>;
     initialize: () => Promise<void>;
 }
@@ -84,6 +96,47 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         } catch (error) {
             set({ token: null, currentUser: null });
             setAuthToken(null);
+        }
+    },
+
+    blockUser: async (userId: string) => {
+        try {
+            await blockUser(userId);
+            set(state => {
+                if (!state.currentUser) return state;
+                const blocked = state.currentUser.blocked_users || [];
+                if (!blocked.includes(userId)) {
+                    return {
+                        currentUser: {
+                            ...state.currentUser,
+                            blocked_users: [...blocked, userId]
+                        }
+                    };
+                }
+                return state;
+            });
+        } catch (error) {
+            console.error('Block failed:', error);
+            throw error;
+        }
+    },
+
+    unblockUser: async (userId: string) => {
+        try {
+            await unblockUser(userId);
+            set(state => {
+                if (!state.currentUser) return state;
+                const blocked = state.currentUser.blocked_users || [];
+                return {
+                    currentUser: {
+                        ...state.currentUser,
+                        blocked_users: blocked.filter(id => id !== userId)
+                    }
+                };
+            });
+        } catch (error) {
+            console.error('Unblock failed:', error);
+            throw error;
         }
     },
 

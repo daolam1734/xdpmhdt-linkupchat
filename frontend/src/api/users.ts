@@ -7,6 +7,7 @@ export interface UserSearchItem {
     bio?: string;
     is_friend?: boolean;
     is_online?: boolean;
+    is_blocked?: boolean;
     allow_stranger_messages?: boolean;
     request_sent?: boolean;
     request_id?: string;
@@ -27,6 +28,21 @@ export const searchUsers = async (q: string): Promise<UserSearchItem[]> => {
 
 export const startDirectChat = async (userId: string) => {
     const response = await api.post(`/users/direct-chat/${userId}`);
+    return response.data;
+};
+
+export const blockUser = async (userId: string) => {
+    const response = await api.post(`/users/block/${userId}`);
+    return response.data;
+};
+
+export const unblockUser = async (userId: string) => {
+    const response = await api.post(`/users/unblock/${userId}`);
+    return response.data;
+};
+
+export const getBlockedList = async (): Promise<UserSearchItem[]> => {
+    const response = await api.get('/users/blocked-list');
     return response.data;
 };
 

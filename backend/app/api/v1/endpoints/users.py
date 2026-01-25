@@ -21,8 +21,12 @@ class UserOut(BaseModel):
     is_online: Optional[bool] = False
     last_seen: Optional[datetime] = None
     request_sent: Optional[bool] = False
+    is_blocked: Optional[bool] = False
+    blocked_by_other: Optional[bool] = False
     allow_stranger_messages: bool = True
     request_id: Optional[str] = None
+    message_count: Optional[int] = 0
+    friend_count: Optional[int] = 0
     created_at: Optional[datetime] = None
 
     class Config:
@@ -39,12 +43,27 @@ async def search_users(
     """
     mongo_query = {
         "username": {"$regex": re.escape(q), "$options": "i"},
-        "id": {"$ne": current_user["id"]}
+        "id": {
+            "$ne": current_user["id"],
+            "$nin": current_user.get("blocked_users", []) # Không tìm thấy người mình đã chặn
+        }
     }
+    
+    # Lọc những người đã chặn mình
+    blocked_by_query = await db["users"].find({"blocked_users": current_user["id"]}).to_list(length=100)
+    blocked_me_ids = [u["id"] for u in blocked_by_query]
+    
+    if blocked_me_ids:
+        mongo_query["id"]["$nin"].extend(blocked_me_ids)
+
     users = await db["users"].find(mongo_query).limit(10).to_list(length=10)
     
     results = []
     for user_data in users:
+        # Ràng buộc: Ẩn trạng thái online nếu user đó không muốn hiển thị
+        if not user_data.get("show_online_status", True):
+            user_data["is_online"] = False
+            
         user_out = UserOut(**user_data)
         
         # Kiểm tra xem đã là bạn chưa
@@ -77,11 +96,34 @@ async def get_user_profile(
     current_user: dict = Depends(get_current_user)
 ) -> Any:
     """
-    Xem profile của người dùng khác.
+    Xem profile của người dùng khác kèm theo thống kê.
     """
     user_data = await db["users"].find_one({"id": user_id})
     if not user_data:
         raise HTTPException(status_code=404, detail="Người dùng không tồn tại")
+    
+    # Tính toán thống kê
+    message_count = await db["messages"].count_documents({"sender_id": user_id})
+    friend_count = await db["friend_requests"].count_documents({
+        "$or": [
+            {"from_id": user_id, "status": "accepted"},
+            {"to_id": user_id, "status": "accepted"}
+        ]
+    })
+    
+    # Ràng buộc: Chặn xem profile nếu có quan hệ chặn
+    if user_id in current_user.get("blocked_users", []) or current_user["id"] in user_data.get("blocked_users", []):
+        # Chỉ cho phép xem các thông tin công khai tối thiểu hoặc báo lỗi
+        user_data["is_online"] = False
+        user_data["bio"] = "Thông tin không khả dụng"
+        user_data["show_online_status"] = False
+    
+    user_data["message_count"] = message_count
+    user_data["friend_count"] = friend_count
+    
+    # Ràng buộc trạng thái hoạt động
+    if not user_data.get("show_online_status", True):
+        user_data["is_online"] = False
     
     user_out = UserOut(**user_data)
     
@@ -93,6 +135,10 @@ async def get_user_profile(
         ]
     })
     user_out.is_friend = bool(friend_check)
+    
+    # Check if blocked
+    user_out.is_blocked = user_id in current_user.get("blocked_users", [])
+    user_out.blocked_by_other = current_user["id"] in user_data.get("blocked_users", [])
     
     return user_out
 
@@ -108,6 +154,14 @@ async def send_friend_request(
     if user_id == current_user["id"]:
         raise HTTPException(status_code=400, detail="Bạn không thể kết bạn với chính mình")
     
+    # Kiểm tra chặn
+    target = await db["users"].find_one({"id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="Người dùng không tồn tại")
+        
+    if user_id in current_user.get("blocked_users", []) or current_user["id"] in target.get("blocked_users", []):
+        raise HTTPException(status_code=403, detail="Không thể thực hiện yêu cầu này.")
+
     # Check existing request
     existing = await db["friend_requests"].find_one({
         "$or": [
@@ -216,6 +270,12 @@ async def get_friends_list(
             friend_ids.append(req["from_id"])
             
     users = await db["users"].find({"id": {"$in": friend_ids}}).to_list(length=100)
+    
+    # Ràng buộc trạng thái hoạt động cho danh sách bạn bè
+    for u in users:
+        if not u.get("show_online_status", True):
+            u["is_online"] = False
+            
     return [UserOut(**u, is_friend=True) for u in users]
 
 @router.post("/direct-chat/{user_id}", response_model=RoomSchema)
@@ -236,6 +296,13 @@ async def start_direct_chat(
     
     if user_id == current_user["id"]:
         raise HTTPException(status_code=400, detail="Bạn không thể nhắn tin với chính mình")
+
+    # Kiểm tra xem có bị chặn không
+    if user_id in current_user.get("blocked_users", []):
+        raise HTTPException(status_code=403, detail="Bạn đã chặn người dùng này.")
+    
+    if current_user["id"] in target.get("blocked_users", []):
+        raise HTTPException(status_code=403, detail="Bạn đã bị người dùng này chặn.")
 
     # Kiểm tra quan hệ bạn bè
     is_friend_req = await db["friend_requests"].find_one({
@@ -296,3 +363,71 @@ async def start_direct_chat(
                 if "_id" in room: room.pop("_id")
                 return room
         raise HTTPException(status_code=500, detail=f"Lỗi hệ thống: {str(e)}")
+
+@router.post("/block/{user_id}")
+async def block_user(
+    user_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    """
+    Chặn một người dùng.
+    """
+    if user_id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Bạn không thể chặn chính mình")
+        
+    await db["users"].update_one(
+        {"id": current_user["id"]},
+        {"$addToSet": {"blocked_users": user_id}}
+    )
+
+    # Ràng buộc logic nghiệp vụ: Tự động hủy kết bạn hoặc lời mời khi chặn
+    await db["friend_requests"].delete_many({
+        "$or": [
+            {"from_id": current_user["id"], "to_id": user_id},
+            {"from_id": user_id, "to_id": current_user["id"]}
+        ]
+    })
+    
+    # Thông báo thời gian thực cho người bị chặn
+    from backend.app.api.v1.endpoints.websocket import notify_block_status_change
+    await notify_block_status_change(user_id, current_user["id"], True)
+    
+    return {"message": "Đã chặn người dùng này"}
+
+@router.post("/unblock/{user_id}")
+async def unblock_user(
+    user_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    """
+    Bỏ chặn một người dùng.
+    """
+    await db["users"].update_one(
+        {"id": current_user["id"]},
+        {"$pull": {"blocked_users": user_id}}
+    )
+
+    # Thông báo thời gian thực cho người được bỏ chặn
+    from backend.app.api.v1.endpoints.websocket import notify_block_status_change
+    await notify_block_status_change(user_id, current_user["id"], False)
+
+    return {"message": "Đã bỏ chặn người dùng này"}
+
+@router.get("/blocked-list", response_model=List[UserOut])
+async def get_blocked_list(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    """
+    Lấy danh sách người dùng đã chặn.
+    """
+    user = await db["users"].find_one({"id": current_user["id"]})
+    blocked_ids = user.get("blocked_users", [])
+    
+    if not blocked_ids:
+        return []
+        
+    users = await db["users"].find({"id": {"$in": blocked_ids}}).to_list(length=100)
+    return [UserOut(**u) for u in users]

@@ -11,12 +11,11 @@ import type { Room } from '../../types/chat';
 import { Avatar } from '../common/Avatar';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { clsx } from 'clsx';
-import { searchUsers, startDirectChat, sendFriendRequest, acceptFriendRequest, rejectFriendRequest, getPendingRequests } from '../../api/users';
+import { searchUsers, startDirectChat, sendFriendRequest, acceptFriendRequest, rejectFriendRequest, getPendingRequests, getUserProfile } from '../../api/users';
 import type { UserSearchItem, FriendRequest } from '../../api/users';
 import { formatRelativeTime } from '../../utils/time';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useChatStore } from '../../store/useChatStore';
-import { ProfileModal } from '../chat/ProfileModal';
 import toast from 'react-hot-toast';
 
 interface SidebarProps {
@@ -31,17 +30,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
     const [searchResults, setSearchResults] = useState<UserSearchItem[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
-    const [viewingUser, setViewingUser] = useState<UserSearchItem | null>(null);
-    const [menuRoomId, setMenuRoomId] = useState<string | null>(null);
     const [deleteConfirmRoomId, setDeleteConfirmRoomId] = useState<string | null>(null);
     const { currentUser } = useAuthStore();
-    const { clearHistory, togglePin } = useChatStore();
+    const { clearHistory, togglePin, activeDropdownId, setActiveDropdown, setViewingUser, viewingUser } = useChatStore();
+
+    const menuRoomId = activeDropdownId?.startsWith('sidebar-room-') ? activeDropdownId.replace('sidebar-room-', '') : null;
 
     useEffect(() => {
-        const handleClickOutside = () => setMenuRoomId(null);
+        if (!activeDropdownId) return;
+        const handleClickOutside = () => setActiveDropdown(null);
         window.addEventListener('click', handleClickOutside);
         return () => window.removeEventListener('click', handleClickOutside);
-    }, []);
+    }, [activeDropdownId, setActiveDropdown]);
 
     useEffect(() => {
         const fetchPending = async () => {
@@ -276,11 +276,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
 
                         {/* Special AI Room section if exists */}
                         {rooms.filter(r => r.id === 'ai').map((room) => (
-                            <button
+                            <div
                                 key={room.id}
-                                onClick={() => onSelectRoom?.(room)}
+                                onClick={() => {
+                                    onSelectRoom?.(room);
+                                    setActiveDropdown(null);
+                                }}
                                 className={clsx(
-                                    "w-full flex items-center space-x-3 px-3 py-3 rounded-xl transition-all group relative border border-secondary/10 shadow-sm mb-1",
+                                    "w-full flex items-center space-x-3 px-3 py-3 rounded-xl transition-all group relative border border-secondary/10 shadow-sm mb-1 cursor-pointer",
                                     activeRoomId === room.id 
                                         ? "bg-purple-50 border-purple-200" 
                                         : "bg-white hover:bg-gray-50"
@@ -306,20 +309,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                setMenuRoomId(menuRoomId === room.id ? null : room.id);
+                                                const roomMenuId = `sidebar-room-${room.id}`;
+                                                setActiveDropdown(activeDropdownId === roomMenuId ? null : roomMenuId);
                                             }}
-                                            className="ml-2 p-1.5 hover:bg-purple-100 rounded-full text-purple-400 opacity-0 group-hover:opacity-100 transition-all"
+                                            className={clsx(
+                                                "ml-2 p-1.5 hover:bg-purple-100 rounded-full text-purple-400 transition-all",
+                                                activeDropdownId === `sidebar-room-${room.id}` ? "opacity-100 bg-purple-50" : "opacity-0 group-hover:opacity-100"
+                                            )}
                                         >
                                             <MoreHorizontal size={18} />
                                         </button>
                                     )}
 
-                                    {menuRoomId === room.id && (
+                                    {activeDropdownId === `sidebar-room-${room.id}` && (
                                         <div className="absolute right-0 top-10 w-56 bg-white border border-gray-100 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in zoom-in duration-200">
                                             <button 
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setMenuRoomId(null);
+                                                    setActiveDropdown(null);
                                                     setDeleteConfirmRoomId(room.id);
                                                 }}
                                                 className="w-full flex items-center px-4 py-2.5 text-[14px] text-red-600 hover:bg-red-50 transition-colors"
@@ -330,22 +337,30 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                                         </div>
                                     )}
                                 </div>
-                            </button>
+                            </div>
                         ))}
 
                         {rooms.filter(r => r.id !== 'ai').map((room) => (
-                            <button
+                            <div
                                 key={room.id}
-                                onClick={() => onSelectRoom?.(room)}
+                                onClick={() => {
+                                    onSelectRoom?.(room);
+                                    setActiveDropdown(null);
+                                }}
                                 className={clsx(
-                                    "w-full flex items-center space-x-3 px-3 py-3 rounded-xl transition-all group relative",
+                                    "w-full flex items-center space-x-3 px-3 py-3 rounded-xl transition-all group relative cursor-pointer",
                                     activeRoomId === room.id 
                                         ? "bg-[#E7F3FF]" 
                                         : "hover:bg-gray-100"
                                 )}
                             >
                                 <div className="relative shrink-0">
-                                    <Avatar name={room.name} url={room.avatar_url} size="lg" isOnline={room.is_online} />
+                                    <Avatar 
+                                        name={room.name} 
+                                        url={room.avatar_url} 
+                                        size="lg" 
+                                        isOnline={room.is_online && !room.blocked_by_other && !(room.other_user_id && currentUser?.blocked_users?.includes(room.other_user_id))} 
+                                    />
                                 </div>
                                 
                                 <div className="flex-1 text-left overflow-hidden pr-2">
@@ -387,19 +402,41 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            setMenuRoomId(menuRoomId === room.id ? null : room.id);
+                                            const roomMenuId = `sidebar-room-${room.id}`;
+                                            setActiveDropdown(activeDropdownId === roomMenuId ? null : roomMenuId);
                                         }}
-                                        className="ml-2 p-1.5 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-all"
+                                        className={clsx(
+                                            "ml-2 p-1.5 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 transition-all",
+                                            menuRoomId === room.id ? "opacity-100 bg-gray-100" : "opacity-0 group-hover:opacity-100"
+                                        )}
                                     >
                                         <MoreHorizontal size={18} />
                                     </button>
 
                                     {menuRoomId === room.id && (
                                         <div className="absolute right-0 top-10 w-56 bg-white border border-gray-100 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in zoom-in duration-200">
+                                            {room.type === 'direct' && room.other_user_id && (
+                                                <button 
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        setActiveDropdown(null);
+                                                        try {
+                                                            const userData = await getUserProfile(room.other_user_id!);
+                                                            setViewingUser(userData);
+                                                        } catch (error) {
+                                                            toast.error("Không thể tải thông tin cá nhân");
+                                                        }
+                                                    }}
+                                                    className="w-full flex items-center px-4 py-2.5 text-[14px] text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-50"
+                                                >
+                                                    <User size={16} className="mr-3 text-gray-400" />
+                                                    Xem trang cá nhân
+                                                </button>
+                                            )}
                                             <button 
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setMenuRoomId(null);
+                                                    setActiveDropdown(null);
                                                     togglePin(room.id);
                                                     toast.success(room.is_pinned ? "Đã bỏ ghim" : "Đã ghim đoạn chat");
                                                 }}
@@ -420,7 +457,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                                             <button 
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setMenuRoomId(null);
+                                                    setActiveDropdown(null);
                                                     toast.success("Đã tắt thông báo");
                                                 }}
                                                 className="w-full flex items-center px-4 py-2.5 text-[14px] text-gray-700 hover:bg-gray-50 transition-colors"
@@ -432,7 +469,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                                             <button 
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setMenuRoomId(null);
+                                                    setActiveDropdown(null);
                                                     setDeleteConfirmRoomId(room.id);
                                                 }}
                                                 className="w-full flex items-center px-4 py-2.5 text-[14px] text-red-600 hover:bg-red-50 transition-colors"
@@ -443,25 +480,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                                         </div>
                                     )}
                                 </div>
-                            </button>
+                            </div>
                         ))}
                     </div>
                 )}
             </div>
 
-            {/* Profile Modal for any user */}
-            {viewingUser && (
-                <ProfileModal 
-                    isOpen={!!viewingUser} 
-                    onClose={() => setViewingUser(null)} 
-                    user={viewingUser as any}
-                />
-            )}
-
             {/* Delete History Confirm Modal */}
             <ConfirmModal
                 isOpen={!!deleteConfirmRoomId}
-                onClose={() => setDeleteConfirmRoomId(null)}
+                onCancel={() => setDeleteConfirmRoomId(null)}
                 onConfirm={() => deleteConfirmRoomId && handleDeleteHistory(deleteConfirmRoomId)}
                 title="Xóa lịch sử trò chuyện"
                 message="Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện? Hành động này không thể hoàn tác và tin nhắn sẽ bị ẩn khỏi phía bạn."
