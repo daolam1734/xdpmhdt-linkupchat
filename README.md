@@ -30,8 +30,8 @@ LinkUp là một nền tảng chat thời gian thực hiện đại, được th
 
 ### 2. Clone dự án
 ```bash
-git clone https://github.com/your-username/linkup-chat.git
-cd linkup-chat
+git clone https://github.com/daolam1734/xdpmhdt-linkupchat.git
+cd xdpmhdt-linkupchat
 ```
 
 ### 3. Cấu hình Backend
