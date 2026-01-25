@@ -10,6 +10,7 @@ class RoomBase(BaseModel):
     updated_at: Optional[datetime] = None
     avatar_url: Optional[str] = None
     is_online: Optional[bool] = False
+    is_pinned: Optional[bool] = False
     last_message: Optional[str] = None
     last_message_id: Optional[str] = None
     last_message_sender: Optional[str] = None

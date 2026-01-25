@@ -18,6 +18,7 @@ class MessageRead(MessageBase):
     is_edited: bool = False
     is_recalled: bool = False
     is_pinned: bool = False
+    status: Optional[str] = "sent" # sent, delivered, seen
     reply_to_id: Optional[str] = None
     reply_to_content: Optional[str] = None
     suggestions: Optional[list[str]] = None

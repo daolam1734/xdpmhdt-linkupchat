@@ -37,6 +37,13 @@ async def get_rooms(
     # Xử lý thông tin bổ sung cho từng phòng
     final_rooms = []
     for room in rooms_list:
+        # Lấy thông tin member của user hiện tại
+        membership = await db["room_members"].find_one({
+            "room_id": room["id"],
+            "user_id": current_user["id"]
+        })
+        is_pinned = membership.get("is_pinned", False) if membership else False
+
         # Lấy tin nhắn cuối cùng (không bị người dùng xóa phía họ)
         msg_query = {
             "room_id": room["id"],
@@ -82,6 +89,7 @@ async def get_rooms(
                 "icon": room.get("icon"),
                 "avatar_url": other_avatar,
                 "is_online": is_online,
+                "is_pinned": is_pinned,
                 "updated_at": room.get("updated_at"),
                 "last_message": last_message_content,
                 "last_message_id": last_message_id,
@@ -94,6 +102,7 @@ async def get_rooms(
             room["last_message_id"] = last_message_id
             room["last_message_sender"] = last_message_sender
             room["last_message_at"] = last_message_at
+            room["is_pinned"] = is_pinned
             final_rooms.append(room)
             
     return final_rooms
@@ -122,3 +131,34 @@ async def create_room(
     }
     await db["chat_rooms"].insert_one(db_obj)
     return db_obj
+
+@router.post("/{room_id}/pin")
+async def toggle_pin_room(
+    room_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    """
+    Ghim hoặc bỏ ghim một phòng chat.
+    """
+    membership = await db["room_members"].find_one({
+        "room_id": room_id,
+        "user_id": current_user["id"]
+    })
+    
+    if not membership:
+        # Nếu chưa là thành viên (ví dụ phòng public), tự động thêm vào
+        await db["room_members"].insert_one({
+            "room_id": room_id,
+            "user_id": current_user["id"],
+            "joined_at": datetime.now(timezone.utc),
+            "is_pinned": True
+        })
+        return {"status": "success", "is_pinned": True}
+    
+    new_status = not membership.get("is_pinned", False)
+    await db["room_members"].update_one(
+        {"room_id": room_id, "user_id": current_user["id"]},
+        {"$set": {"is_pinned": new_status}}
+    )
+    return {"status": "success", "is_pinned": new_status}

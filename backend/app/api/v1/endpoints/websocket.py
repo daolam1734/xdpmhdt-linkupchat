@@ -345,6 +345,32 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                 await websocket.send_json({"type": "pong"})
                 continue
             
+            if msg_type == "read_receipt":
+                room_id = message_json.get("room_id")
+                msg_id = message_json.get("message_id")
+                if room_id:
+                    # Cập nhật tin nhắn đã xem
+                    if msg_id:
+                        await db["messages"].update_one(
+                            {"id": msg_id, "room_id": room_id},
+                            {"$set": {"status": "seen"}}
+                        )
+                    else:
+                        # Mark all as seen in this room for current user
+                        await db["messages"].update_many(
+                            {"room_id": room_id, "sender_id": {"$ne": user_id}, "status": {"$ne": "seen"}},
+                            {"$set": {"status": "seen"}}
+                        )
+                    
+                    # Notify others in the room
+                    await manager.broadcast_to_room(room_id, {
+                        "type": "read_receipt",
+                        "room_id": room_id,
+                        "user_id": user_id,
+                        "message_id": msg_id
+                    })
+                continue
+            
             room_id = message_json.get("room_id")
             if not room_id: continue
 
@@ -387,6 +413,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     "is_edited": False,
                     "is_recalled": False,
                     "is_pinned": False,
+                    "status": "sent",
                     "reply_to_id": reply_to_id,
                     "reply_to_content": reply_to_content,
                     "shared_post": shared_post,
@@ -407,6 +434,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     "is_bot": False,
                     "room_id": room_id,
                     "timestamp": now.isoformat(),
+                    "status": "sent",
                     "reply_to_id": reply_to_id,
                     "reply_to_content": reply_to_content,
                     "shared_post": shared_post
