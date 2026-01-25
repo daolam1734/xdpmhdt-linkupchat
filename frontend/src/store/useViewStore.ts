@@ -1,17 +1,13 @@
 import { create } from 'zustand';
 
-type ViewType = 'chat' | 'admin' | 'forum';
+type ViewType = 'chat' | 'admin';
 
 interface ViewState {
     currentView: ViewType;
-    targetPostId: string | null;
-    setView: (view: ViewType, postId?: string) => void;
-    clearTargetPost: () => void;
+    setView: (view: ViewType) => void;
 }
 
 export const useViewStore = create<ViewState>((set) => ({
     currentView: 'chat',
-    targetPostId: null,
-    setView: (view, postId) => set({ currentView: view, targetPostId: postId || null }),
-    clearTargetPost: () => set({ targetPostId: null }),
+    setView: (view) => set({ currentView: view }),
 }));

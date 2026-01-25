@@ -6,5 +6,5 @@ export const authService = {
     }),
     signup: (data: { username: string; password: string }) => api.post('/auth/signup', data),
     getMe: () => api.get('/auth/me'),
-    updateMe: (data: { username?: string; avatar_url?: string; bio?: string }) => api.patch('/auth/me', data),
+    updateMe: (data: any) => api.patch('/auth/me', data),
 };

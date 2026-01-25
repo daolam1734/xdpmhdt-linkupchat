@@ -23,11 +23,11 @@ async def get_rooms(
     memberships = await db["room_members"].find({"user_id": current_user["id"]}).to_list(length=1000)
     user_room_ids = [m["room_id"] for m in memberships]
 
-    # Truy vấn các phòng Public, AI (id=ai) hoặc các phòng user đã tham gia
+    # Truy vấn các phòng Public, AI, Help hoặc các phòng user đã tham gia
     query = {
         "$or": [
             {"type": "public"},
-            {"id": "ai"},
+            {"id": {"$in": ["ai", "help"]}},
             {"id": {"$in": user_room_ids}}
         ]
     }
@@ -49,6 +49,14 @@ async def get_rooms(
             "room_id": room["id"],
             "deleted_by_users": {"$ne": current_user["id"]}
         }
+        
+        # Isolation logic cho phòng đặc biệt (AI, Help)
+        if room["id"] in ["ai", "help"]:
+            msg_query["$or"] = [
+                {"sender_id": current_user["id"]},
+                {"receiver_id": current_user["id"]}
+            ]
+
         last_msg = await db["messages"].find(msg_query).sort("timestamp", -1).limit(1).to_list(length=1)
         
         last_message_content = None

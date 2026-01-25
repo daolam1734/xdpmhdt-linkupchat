@@ -12,10 +12,9 @@ import { ConfirmModal } from '../components/common/ConfirmModal';
 
 interface ChatPageProps {
     onNavigateToAdmin?: () => void;
-    onNavigateToForum?: () => void;
 }
 
-export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin, onNavigateToForum }) => {
+export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
   const { 
     messages, 
     isConnected, 
@@ -55,7 +54,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin, onNavigat
         activeRoomId={activeRoom?.id || ''} 
         onSelectRoom={setActiveRoom}
         onRoomCreated={fetchRooms}
-        onNavigateToForum={onNavigateToForum}
       />
 
       {/* Main Chat Area */}

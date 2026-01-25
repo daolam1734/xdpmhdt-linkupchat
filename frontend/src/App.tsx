@@ -5,7 +5,6 @@ import { useViewStore } from './store/useViewStore'
 import { ChatPage } from './pages/ChatPage'
 import { AuthPage } from './pages/AuthPage'
 import { AdminPage } from './pages/AdminPage'
-import { ForumPage } from './pages/ForumPage'
 import { MessageCircle } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
 
@@ -37,7 +36,9 @@ function App() {
               </div>
               <h2 className="text-xl font-bold text-gray-900 mb-2">LinkUp</h2>
               <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-              <p className="mt-4 text-blue-500 font-medium animate-pulse text-sm">Nơi mọi cuộc trò chuyện bắt đầu...</p>
+              <p className="mt-4 text-blue-500 font-medium animate-pulse text-sm text-center max-w-[280px]">
+                  LinkUp giúp cộng đồng kết nối và thảo luận hiệu quả
+              </p>
           </div>
       );
     }
@@ -46,13 +47,9 @@ function App() {
       if (currentView === 'admin' && currentUser.is_superuser) {
           return <AdminPage onBack={() => setView('chat')} />;
       }
-      if (currentView === 'forum') {
-          return <ForumPage onBack={() => setView('chat')} />;
-      }
       return (
           <ChatPage 
               onNavigateToAdmin={() => setView('admin')} 
-              onNavigateToForum={() => setView('forum')}
           />
       );
     }

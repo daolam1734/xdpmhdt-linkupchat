@@ -25,7 +25,9 @@ import {
     Sparkles,
     Check,
     CheckCheck,
-    CircleDashed
+    CircleDashed,
+    X,
+    Info
 } from 'lucide-react';
 
 interface MessageItemProps {
@@ -46,7 +48,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     isLatest = false
 }) => {
   const { currentUser } = useAuthStore();
-  const { setReplyingTo, setEditingMessage, recallMessage, pinMessage } = useChatStore();
+  const { setReplyingTo, setEditingMessage, recallMessage, pinMessage, deleteMessageForMe } = useChatStore();
   const { setView } = useViewStore();
 
   const sanitizedContent = useMemo(() => {
@@ -188,7 +190,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                             <div className="mt-3 pt-2 border-t border-purple-100/50 flex items-center space-x-1.5 opacity-50">
                                 <Info size={10} className="text-purple-400" />
                                 <span className="text-[9px] font-medium text-purple-600 italic">
-                                    AI có thể không chính xác. Vui lòng kiểm tra thông tin quan trọng.
+                                    LinkUp AI có thể đưa ra thông tin không chính xác. Hãy kiểm tra các phản hồi quan trọng.
                                 </span>
                             </div>
                         </div>
@@ -260,16 +262,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                                                     {message.shared_post.author_name}
                                                 </span>
                                             </div>
-                                            <button 
-                                                onClick={() => setView('forum', (message as any).shared_post.post_id)}
-                                                className={clsx(
-                                                    "flex items-center space-x-1 px-2.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all active:scale-95",
-                                                    isMe ? "bg-white text-blue-600 hover:bg-blue-50" : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
-                                                )}
-                                            >
-                                                <span>Xem tiếp</span>
-                                                <ExternalLink size={10} />
-                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -315,28 +307,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     </div>
                 )}
             </div>
-
-            {/* AI Suggestion Chips (Meta AI Style) */}
-            {message.isBot && isLatest && message.suggestions && message.suggestions.length > 0 && !message.isStreaming && (
-                <div className="flex flex-wrap gap-2 mt-2 ml-1 animate-in fade-in slide-in-from-left-4 duration-700 delay-300">
-                    <div className="w-full text-[11px] font-bold text-purple-400/80 uppercase tracking-widest mb-1 ml-1">
-                        Gợi ý cho bạn
-                    </div>
-                    {message.suggestions.map((suggestion, idx) => (
-                        <button
-                            key={idx}
-                            onClick={() => {
-                                const store = useChatStore.getState();
-                                store.sendMessage(suggestion);
-                            }}
-                            className="group/sugg relative bg-white/80 backdrop-blur-sm border border-purple-100 text-purple-600 text-[13px] font-medium px-4 py-2 rounded-2xl hover:bg-gradient-to-r hover:from-purple-50 hover:to-blue-50 hover:border-purple-300 transition-all shadow-sm hover:shadow-md active:scale-95 flex items-center space-x-2"
-                        >
-                            <span>{suggestion}</span>
-                            <div className="w-1.5 h-1.5 bg-purple-400 rounded-full opacity-0 group-hover/sugg:opacity-100 transition-opacity animate-pulse" />
-                        </button>
-                    ))}
-                </div>
-            )}
 
             {/* Quick Actions (Messenger style) */}
             {!message.is_recalled && !message.isBot && (
@@ -402,7 +372,17 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                                 <span>{message.is_pinned ? "Bỏ ghim" : "Ghim"}</span>
                             </button>
 
-                            {isMe && (
+                            <div className="h-[1px] bg-gray-100 my-1 mx-2" />
+
+                            <button 
+                                onClick={() => deleteMessageForMe(message.id)}
+                                className="w-full flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 text-[13px] text-red-500 group/recall"
+                            >
+                                <Trash2 size={16} />
+                                <span>Gỡ ở phía bạn</span>
+                            </button>
+
+                            {isMe && !message.is_recalled && (
                                 <>
                                     <button 
                                         onClick={() => setEditingMessage(message)}
@@ -410,14 +390,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                                     >
                                         <Edit2 size={16} />
                                         <span>Chỉnh sửa</span>
-                                    </button>
-                                    <div className="h-[1px] bg-gray-100 my-1 mx-2" />
-                                    <button 
-                                        onClick={() => recallMessage(message.id)}
-                                        className="w-full flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 text-[13px] text-red-500 group/recall"
-                                    >
-                                        <Trash2 size={16} />
-                                        <span>Gỡ ở phía bạn</span>
                                     </button>
                                     <button 
                                         onClick={() => recallMessage(message.id)}

@@ -24,10 +24,9 @@ interface SidebarProps {
     activeRoomId?: string;
     onSelectRoom?: (room: Room) => void;
     onRoomCreated?: () => void;
-    onNavigateToForum?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectRoom, onRoomCreated, onNavigateToForum }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectRoom, onRoomCreated }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<UserSearchItem[]>([]);
     const [isSearching, setIsSearching] = useState(false);
@@ -475,13 +474,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                 <div className="flex flex-col items-center text-blue-600 cursor-pointer">
                     <MessageCircle size={24} fill="currentColor" fillOpacity={0.1} />
                     <span className="text-[10px] font-medium mt-1">Đoạn chat</span>
-                </div>
-                <div 
-                    onClick={onNavigateToForum}
-                    className="flex flex-col items-center text-gray-400 hover:text-blue-600 cursor-pointer group"
-                >
-                    <Users size={24} className="group-hover:text-blue-600 transition-colors" />
-                    <span className="text-[10px] font-medium mt-1">Diễn đàn</span>
                 </div>
                 <div 
                     onClick={() => setViewingUser(currentUser as any)}

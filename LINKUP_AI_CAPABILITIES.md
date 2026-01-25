@@ -22,7 +22,7 @@ LinkUp AI không chỉ là một chatbot thông thường, mà là một thành 
 ## 4. Giá trị mang lại cho hệ thống
 *   **Tăng mức độ tương tác:** Người dùng dành nhiều thời gian hơn cho ứng dụng nhờ sự hỗ trợ đắc lực và thú vị từ AI.
 *   **Hỗ trợ đa ngôn ngữ:** AI có khả năng dịch thuật, giải thích mã nguồn, và soạn thảo văn bản đa ngôn ngữ ngay trong cửa sổ chat.
-*   **Giảm tải công việc:** Trong các nhóm chat diễn đàn, AI có thể đóng vai trò là người giải đáp nhanh các thắc mắc cơ bản.
+*   **Giảm tải công việc:** Trong các nhóm chat, AI có thể đóng vai trò là người giải đáp nhanh các thắc mắc cơ bản.
 
 ---
 *Phát triển bởi LinkUp Team - Mang trí tuệ nhân tạo vào từng cuộc trò chuyện.*

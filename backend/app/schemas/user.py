@@ -14,6 +14,7 @@ class UserUpdate(BaseModel):
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
     allow_stranger_messages: Optional[bool] = None
+    ai_preferences: Optional[dict] = None
 
 class User(UserBase):
     id: str
@@ -22,6 +23,7 @@ class User(UserBase):
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
     allow_stranger_messages: bool = True
+    ai_preferences: Optional[dict] = None
     created_at: datetime
 
     class Config:

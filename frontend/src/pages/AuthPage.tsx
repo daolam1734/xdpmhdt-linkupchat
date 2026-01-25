@@ -42,7 +42,9 @@ export const AuthPage: React.FC = () => {
                     <MessageCircle size={48} className="text-white fill-white" />
                 </div>
                 <h1 className="text-4xl font-extrabold text-[#050505] tracking-tight">LinkUp</h1>
-                <p className="text-gray-500 font-medium mt-2">Nơi mọi cuộc trò chuyện bắt đầu</p>
+                <p className="text-gray-500 font-medium mt-2 text-center max-w-[400px]">
+                    LinkUp giúp cộng đồng kết nối và thảo luận hiệu quả, với AI hỗ trợ kiến thức khi được yêu cầu.
+                </p>
             </div>
 
             <div className="max-w-[400px] w-full bg-white rounded-2xl shadow-[0_12px_28px_0_rgba(0,0,0,0.2),0_2px_4px_0_rgba(0,0,0,0.1)] overflow-hidden border border-white">

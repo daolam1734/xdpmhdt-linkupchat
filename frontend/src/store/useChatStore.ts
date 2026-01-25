@@ -25,6 +25,7 @@ interface ChatState {
     sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }) => boolean;
     editMessage: (messageId: string, content: string) => void;
     recallMessage: (messageId: string) => void;
+    deleteMessageForMe: (messageId: string) => void;
     pinMessage: (messageId: string) => void;
     setReplyingTo: (msg: Message | null) => void;
     setEditingMessage: (msg: Message | null) => void;
@@ -38,6 +39,7 @@ interface ChatState {
     setSearchQuery: (query: string) => void;
     toggleMute: () => void;
     setViewingPinned: (val: boolean) => void;
+    dismissSuggestions: (messageId: string) => void;
 }
 
 const RECONNECT_INTERVALS = [1000, 2000, 5000, 10000];
@@ -393,6 +395,11 @@ export const useChatStore = create<ChatState>((set, get) => {
                             return { messages: newMessages };
                         });
                         break;
+                    case 'delete_for_me_success':
+                        set((state) => ({
+                            messages: state.messages.filter(m => m.id !== data.message_id)
+                        }));
+                        break;
                 }
             };
 
@@ -454,6 +461,21 @@ export const useChatStore = create<ChatState>((set, get) => {
                     type: 'recall',
                     message_id: messageId,
                     room_id: activeRoom.id
+                }));
+            }
+        },
+
+        deleteMessageForMe: (messageId: string) => {
+            const { socket, activeRoom } = get();
+            if (socket && socket.readyState === WebSocket.OPEN && activeRoom) {
+                socket.send(JSON.stringify({
+                    type: 'delete_for_me',
+                    message_id: messageId,
+                    room_id: activeRoom.id
+                }));
+                // Tạm thời xóa khỏi store ngay để UI mượt mà
+                set((state) => ({
+                    messages: state.messages.filter(m => m.id !== messageId)
                 }));
             }
         },
@@ -549,5 +571,13 @@ export const useChatStore = create<ChatState>((set, get) => {
         setSearchQuery: (query: string) => set({ searchQuery: query }),
         toggleMute: () => set(state => ({ isMuted: !state.isMuted })),
         setViewingPinned: (val: boolean) => set({ isViewingPinned: val }),
+
+        dismissSuggestions: (messageId: string) => {
+            set((state) => ({
+                messages: state.messages.map((msg) =>
+                    msg.id === messageId ? { ...msg, suggestionsDismissed: true } : msg
+                ),
+            }));
+        },
     };
 });

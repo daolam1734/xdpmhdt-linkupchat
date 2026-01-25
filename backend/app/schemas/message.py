@@ -13,6 +13,7 @@ class MessageRead(MessageBase):
     id: str
     sender_id: Optional[str] = None
     sender_name: Optional[str] = None
+    receiver_id: Optional[str] = None  # Dùng cho các phòng biệt lập (AI, Help)
     timestamp: datetime
     is_bot: bool
     is_edited: bool = False

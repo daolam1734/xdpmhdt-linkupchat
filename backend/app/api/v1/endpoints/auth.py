@@ -72,6 +72,9 @@ async def update_user_me(
     if user_in.allow_stranger_messages is not None:
         update_data["allow_stranger_messages"] = user_in.allow_stranger_messages
     
+    if user_in.ai_preferences is not None:
+        update_data["ai_preferences"] = user_in.ai_preferences
+    
     if update_data:
         await db["users"].update_one({"id": current_user["id"]}, {"$set": update_data})
         # Update current_user dict for returning

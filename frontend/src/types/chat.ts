@@ -47,6 +47,7 @@ export interface Message {
   reply_to_id?: string;
   reply_to_content?: string;
   suggestions?: string[];
+  suggestionsDismissed?: boolean;
   shared_post?: {
     id: string;
     title: string;

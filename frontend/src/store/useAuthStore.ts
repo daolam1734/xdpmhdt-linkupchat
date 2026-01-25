@@ -13,7 +13,17 @@ interface AuthState {
     signup: (username: string, password: string) => Promise<void>;
     logout: () => void;
     fetchCurrentUser: () => Promise<void>;
-    updateProfile: (data: { username?: string; avatar_url?: string; bio?: string; allow_stranger_messages?: boolean }) => Promise<void>;
+    updateProfile: (data: { 
+        username?: string; 
+        avatar_url?: string; 
+        bio?: string; 
+        allow_stranger_messages?: boolean;
+        ai_preferences?: {
+            preferred_style?: 'short' | 'balanced' | 'detailed';
+            coding_frequency?: 'low' | 'medium' | 'high';
+            language?: 'vi' | 'en';
+        }
+    }) => Promise<void>;
     initialize: () => Promise<void>;
 }
 

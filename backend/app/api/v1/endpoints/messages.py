@@ -24,6 +24,14 @@ async def get_room_messages(
         "room_id": room_id,
         "deleted_by_users": {"$ne": current_user["id"]}
     }
+
+    # Isolation logic cho phòng đặc biệt (AI Assistant, Help & Support)
+    if room_id in ["ai", "help"]:
+        query["$or"] = [
+            {"sender_id": current_user["id"]},
+            {"receiver_id": current_user["id"]}
+        ]
+
     messages = await db["messages"].find(query).sort("timestamp", 1).limit(limit).to_list(length=limit)
     return messages
 
@@ -42,8 +50,26 @@ async def search_messages(
         "content": {"$regex": re.escape(query), "$options": "i"},
         "deleted_by_users": {"$ne": current_user["id"]}
     }
+    
+    # Isolation logic cho tìm kiếm (Chỉ thấy tin nhắn của mình trong các phòng biệt lập)
+    isolation_clause = {
+        "$or": [
+            {"room_id": {"$nin": ["ai", "help"]}},
+            {"sender_id": current_user["id"]},
+            {"receiver_id": current_user["id"]}
+        ]
+    }
+    
     if room_id:
         mongo_query["room_id"] = room_id
+        if room_id in ["ai", "help"]:
+            mongo_query["$or"] = [
+                {"sender_id": current_user["id"]},
+                {"receiver_id": current_user["id"]}
+            ]
+    else:
+        # Nếu tìm kiếm global, phải tránh lộ tin nhắn AI/Help của người khác
+        mongo_query.update(isolation_clause)
     
     messages = await db["messages"].find(mongo_query).sort("timestamp", -1).limit(limit).to_list(length=limit)
     return messages

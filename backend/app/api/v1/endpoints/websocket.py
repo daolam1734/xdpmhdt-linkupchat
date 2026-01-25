@@ -2,10 +2,15 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 import json
 import asyncio
 from datetime import datetime, timezone
-from typing import List, Dict
+from typing import List, Dict, Optional
 from jose import jwt
 import uuid
 import re
+from datetime import datetime, timezone
+
+# --- AI Cooldown management ---
+# Stores the last time AI responded in a specific room to prevent spam
+ai_cooldowns: Dict[str, datetime] = {}
 from google import genai
 from google.genai import types
 from backend.app.core.config import settings
@@ -16,9 +21,39 @@ from backend.app.core.admin_config import get_system_api_key
 
 router = APIRouter()
 
+SELF_ISOLATED_ROOMS = ["ai", "help"]
+
+LINKUP_SUPPORT_PROMPT = """
+Bạn là Chuyên viên Hỗ trợ của LinkUp (LinkUp Support). 
+Nhiệm vụ của bạn là giải đáp các thắc mắc về kỹ thuật, hướng dẫn sử dụng ứng dụng và hỗ trợ người dùng gặp khó khăn.
+
+GIỚI THIỆU VỀ LINKUP:
+LinkUp là nền tảng chat thời gian thực dành cho các cộng đồng trực tuyến, nơi mọi người có thể trao đổi, chia sẻ và thảo luận một cách cởi mở và liền mạch. Ứng dụng hỗ trợ hội thoại nhóm linh hoạt, phù hợp cho các cộng đồng học thuật, kỹ thuật, sáng tạo hoặc sở thích chung.
+
+PHONG CÁCH:
+- Chuyên nghiệp, lịch sự và kiên nhẫn.
+- Luôn sẵn sàng giúp đỡ.
+
+HƯỚNG DẪN:
+1. Giải đáp các thắc mắc về tính năng của app: Nhắn tin, Tạo nhóm, Call Video, AI Assistant, Ký ức AI.
+2. Nếu người dùng hỏi về các vấn đề tài khoản, hãy hướng dẫn họ bảo mật kỹ.
+3. Nếu không biết câu trả lời, hãy báo người dùng liên hệ email: support@linkup.chat.
+"""
+
 # --- LINKUP AI (META AI STYLE) TRAINING CONFIG ---
 LINKUP_SYSTEM_PROMPT = """
 Bạn là một trợ lý AI hội thoại thân thiện (LinkUp Assistant), được tích hợp trong ứng dụng chat người-với-người.
+
+KIẾN THỨC VỀ HỆ THỐNG (LINKUP):
+LinkUp là nền tảng chat thời gian thực dành cho các cộng đồng trực tuyến, nơi mọi người có thể trao đổi, chia sẻ và thảo luận một cách cởi mở và liền mạch. Ứng dụng hỗ trợ hội thoại nhóm linh hoạt, phù hợp cho các cộng đồng học thuật, kỹ thuật, sáng tạo hoặc sở thích chung.
+
+AI Assistant trong LinkUp đóng vai trò như trợ lý hỗ trợ kiến thức, chỉ phản hồi khi được gọi. Trong môi trường cộng đồng, AI có thể:
+- Giải đáp nhanh các câu hỏi phổ biến.
+- Tóm tắt nội dung thảo luận.
+- Hỗ trợ giải thích kiến thức chung.
+- Giúp thành viên mới nắm bắt nội dung nhanh hơn.
+
+LinkUp đảm bảo AI không làm gián đoạn hoặc lấn át thảo luận của con người, giữ cho cộng đồng luôn tự nhiên, thân thiện và dễ kiểm soát.
 
 VAI TRÒ
 - Bạn là “trợ lý hỗ trợ”, không phải người tham gia chính trong cuộc trò chuyện.
@@ -58,10 +93,20 @@ QUYỀN RIÊNG TƯ & GIỚI HẠN
 
 TRONG CHAT NHÓM
 - Chỉ phản hồi khi được @mention hoặc gọi bằng lệnh.
-- Không trả lời thay cho thành viên khác. Không chiếm diễn đàn.
+- Không trả lời thay cho thành viên khác.
 
 TONE MẶC ĐỊNH
 - Gần gũi, Trung lập, Hỗ trợ, Không phán xét.
+
+AI MEMORY & PREFERENCES
+- Hệ thống sẽ cung cấp cho bạn "Ký ức nhẹ" (AI Memory) về người dùng này nếu có (ví dụ: họ thích trả lời ngắn, hay hỏi code, hoặc ngôn ngữ ưa thích). Hãy điều chỉnh phong cách phản hồi cho phù hợp với những ghi chú này.
+
+AI MODES (CHẾ ĐỘ XỬ LÝ)
+- Nếu người dùng yêu cầu hành động cụ thể (Tóm tắt, Giải thích, Viết lại, Dịch), bạn phải tuân thủ nghiêm ngặt định dạng đó:
+  + GIẢI THÍCH: Chia nhỏ khái niệm phức tạp thành ngôn ngữ bình dân.
+  + VIẾT LẠI: Giữ nguyên ý, thay đổi cách diễn đạt cho hay hơn/lịch sự hơn.
+  + TÓM TẮT: Chỉ lấy ý chính, cực kỳ ngắn gọn.
+  + DỊCH: Chuyển ngữ chính xác, tự nhiên.
 
 MỤC TIÊU CUỐI CÙNG
 - Giúp người dùng giao tiếp tốt hơn, làm trải nghiệm chat thuận tiện và không gây phiền nhiễu.
@@ -138,7 +183,9 @@ async def run_ai_generation_task(
     username: str, 
     ai_msg_id: str, 
     ai_identity: str,
-    is_suggestion_mode: bool
+    is_suggestion_mode: bool,
+    is_ai_room: bool = False,
+    user_prefs: Optional[dict] = None
 ):
     """
     Chạy xử lý AI trong background task để WebSocket không bị block.
@@ -160,6 +207,9 @@ async def run_ai_generation_task(
                         else:
                             suggestion_data["type"] = f"ai_suggestion_{suggestion_data['type']}"
                         await manager.send_to_user(member["user_id"], suggestion_data)
+            elif room_id in SELF_ISOLATED_ROOMS:
+                # Chỉ gửi cho người dùng yêu cầu (Isolation)
+                await manager.send_to_user(user_id, data)
             else:
                 await manager.broadcast_to_room(room_id, data)
 
@@ -172,6 +222,22 @@ async def run_ai_generation_task(
             "sender": ai_identity,
             "room_id": room_id
         })
+
+        # Cá nhân hóa System Instruction dựa trên Preference "Ký ức nhẹ" hoặc Phòng (Support)
+        personalized_system_prompt = LINKUP_SYSTEM_PROMPT
+        if room_id == "help":
+            personalized_system_prompt = LINKUP_SUPPORT_PROMPT
+
+        if user_prefs:
+            memory_ctx = "\n=== AI USER MEMORY (KÝ ỨC NGƯỜI DÙNG) ===\n"
+            if user_prefs.get("preferred_style") == "short":
+                memory_ctx += "- Người dùng này thích câu trả lời cực kỳ ngắn gọn.\n"
+            if user_prefs.get("coding_frequency") == "high":
+                memory_ctx += "- Người dùng hay hỏi về lập trình, hãy trả lời chuyên sâu và cung cấp code blocks nếu cần.\n"
+            if user_prefs.get("language") == "en":
+                memory_ctx += "- Ưu tiên phản hồi bằng tiếng Anh.\n"
+            
+            personalized_system_prompt += memory_ctx
 
         full_response = ""
         success = False
@@ -190,7 +256,7 @@ async def run_ai_generation_task(
                         model=target_model,
                         contents=final_prompt,
                         config=types.GenerateContentConfig(
-                            system_instruction=LINKUP_SYSTEM_PROMPT
+                            system_instruction=personalized_system_prompt
                         )
                     )
                     
@@ -203,7 +269,7 @@ async def run_ai_generation_task(
                     # LangChain/OpenAI fallback
                     llm = result
                     from langchain.schema import SystemMessage, HumanMessage
-                    messages = [SystemMessage(content=LINKUP_SYSTEM_PROMPT), HumanMessage(content=final_prompt)]
+                    messages = [SystemMessage(content=personalized_system_prompt), HumanMessage(content=final_prompt)]
                     async for chunk in llm.astream(messages):
                         chunk_text = chunk.content
                         if isinstance(chunk_text, list):
@@ -233,6 +299,7 @@ async def run_ai_generation_task(
                 "content": full_response,
                 "sender_id": None,
                 "sender_name": ai_identity,
+                "receiver_id": user_id if room_id in SELF_ISOLATED_ROOMS else None,
                 "room_id": room_id,
                 "timestamp": ai_final_ts,
                 "is_bot": True,
@@ -247,39 +314,6 @@ async def run_ai_generation_task(
             "room_id": room_id,
             "timestamp": ai_final_ts.isoformat()
         })
-
-        # --- GỢI Ý NHANH (SUGGESTIONS) ---
-        if not is_suggestion_mode:
-            try:
-                sugg_prompt = f"Dựa trên câu trả lời vừa rồi: '{full_response[:200]}...', hãy đưa ra 3 câu hỏi ngắn (dưới 10 từ) mà người dùng có thể muốn hỏi tiếp theo. Trả lời dưới dạng list Python, ví dụ: ['Dịch sang tiếng Anh', 'Giải thích thêm', 'Ví dụ cụ thể']"
-                
-                # Dùng lại client từ model thành công nếu có
-                client_to_use = client if 'client' in locals() else genai.Client(api_key=await get_system_api_key(db, "google"))
-                
-                sugg_response = await client_to_use.aio.models.generate_content(
-                    model="gemini-2.5-flash-lite", 
-                    contents=sugg_prompt,
-                    config=types.GenerateContentConfig(temperature=0.7)
-                )
-                
-                import ast
-                text = sugg_response.text
-                start = text.find('[')
-                end = text.find(']') + 1
-                if start != -1 and end != -1:
-                    suggestions = ast.literal_eval(text[start:end])
-                    if isinstance(suggestions, list):
-                        await db["messages"].update_one(
-                            {"id": ai_msg_id},
-                            {"$set": {"suggestions": suggestions[:3]}}
-                        )
-                        await send_ai_data({
-                            "type": "ai_suggestions_list",
-                            "message_id": ai_msg_id,
-                            "suggestions": suggestions[:3]
-                        })
-            except:
-                pass
         
         # Đảm bảo tắt trạng thái typing khi kết thúc thành công
         await manager.broadcast_to_room(room_id, {"type": "typing", "room_id": room_id, "status": False})
@@ -363,12 +397,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         )
                     
                     # Notify others in the room
-                    await manager.broadcast_to_room(room_id, {
-                        "type": "read_receipt",
-                        "room_id": room_id,
-                        "user_id": user_id,
-                        "message_id": msg_id
-                    })
+                    if room_id not in SELF_ISOLATED_ROOMS:
+                        await manager.broadcast_to_room(room_id, {
+                            "type": "read_receipt",
+                            "room_id": room_id,
+                            "user_id": user_id,
+                            "message_id": msg_id
+                        })
                 continue
             
             room_id = message_json.get("room_id")
@@ -439,21 +474,47 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     "reply_to_content": reply_to_content,
                     "shared_post": shared_post
                 }
-                await manager.broadcast_to_room(room_id, metadata)
+                
+                if room_id in SELF_ISOLATED_ROOMS:
+                    await manager.send_to_user(user_id, metadata)
+                else:
+                    await manager.broadcast_to_room(room_id, metadata)
 
                 # --- AI LOGIC START ---
                 # Check room type from database for more accurate detection
                 room_obj = await db["chat_rooms"].find_one({"id": room_id})
-                is_ai_room = room_id == "ai" or (room_obj and room_obj.get("type") == "private" and room_id == "ai")
+                is_ai_room = (room_obj and room_obj.get("is_ai_room", False)) or room_id in SELF_ISOLATED_ROOMS
+                room_type = room_obj.get("type", "private") if room_obj else "private"
                 
-                # Cải tiến: Nhận diện @ai linh hoạt hơn (ở bất kỳ vị trí nào, hoa/thường)
+                # Cải tiến: Nhận diện @ai linh hoạt hơn
                 content_lower = content.lower()
-                is_explicit_call = "@ai" in content_lower or "/ai" in content_lower or "@ ai" in content_lower or "bot ai" in content_lower
+                is_explicit_call = any(trigger in content_lower for trigger in ["@ai", "/ai", "@ ai", "bot ai"])
                 
-                # Theo nguyên tắc Meta AI: Không tự ý chen ngang cuộc hội thoại
-                # Chỉ kích hoạt AI trong phòng AI hoặc khi được gọi đích danh (explicit call)
                 is_suggestion_mode = False 
-                if is_explicit_call or is_ai_room:
+                
+                # Meta-AI Style refinement: 
+                # 1. AI chỉ tự động trả lời trong phòng AI Room riêng.
+                # 2. Trong Group/Private chat khác, AI chỉ trả lời nếu được @mention và nội dung đủ dài.
+                should_ai_respond = False
+                if is_ai_room:
+                    should_ai_respond = True
+                elif is_explicit_call:
+                    # Trích xuất prompt sạch để kiểm tra độ dài
+                    test_prompt = content
+                    for trigger in ["@ai", "/ai", "@ ai", "bot ai"]:
+                        test_prompt = re.sub(re.escape(trigger), '', test_prompt, flags=re.IGNORECASE).strip()
+                    if len(test_prompt) >= 2: # Ít nhất 2 ký tự (ví dụ: "hi")
+                        should_ai_respond = True
+
+                # Check cooldown for non-AI rooms to prevent spam
+                if should_ai_respond and not is_ai_room:
+                    now_ts = datetime.now(timezone.utc)
+                    last_response = ai_cooldowns.get(room_id)
+                    if last_response and (now_ts - last_response).total_seconds() < 5:
+                        # Cooldown 5s cho phòng chat thông thường để tránh spam
+                        should_ai_respond = False
+
+                if should_ai_respond:
                     ai_msg_id = str(uuid.uuid4())
                     ai_identity = "LinkUp Assistant"
                     
@@ -462,19 +523,25 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     if is_explicit_call:
                         for trigger in ["@ai", "/ai", "@ ai", "bot ai"]:
                             prompt_clean = re.sub(re.escape(trigger), '', prompt_clean, flags=re.IGNORECASE).strip()
-                        if not prompt_clean: prompt_clean = "Chào bạn! Tôi có thể giúp gì cho bạn?"
+                        if not prompt_clean: prompt_clean = "Chào bạn! Tôi có thể giúp gì for you?"
 
-                    # Meta-AI Style RAG: Lấy ngữ cảnh
+                    # Meta-AI Style RAG: Lấy ngữ cảnh (Giảm xuống 5 tin nhắn để tối ưu)
                     room_info = f"Phòng: {room_obj.get('name', 'Cá nhân')}" if room_obj else "Phòng: Cá nhân"
                     user_info = f"Người đang chat với bạn: {username}"
                     chat_context = f"Bối cảnh: {room_info}\n{user_info}\n--- Lịch sử chat gần đây ---\n"
                     
-                    recent_msgs = await db["messages"].find({"room_id": room_id}).sort("timestamp", -1).limit(10).to_list(length=10)
+                    recent_msgs = await db["messages"].find({"room_id": room_id}).sort("timestamp", -1).limit(5).to_list(length=5)
                     recent_msgs.reverse()
                     for m in recent_msgs:
                         if m.get("id") == msg_id: continue
-                        sender = m.get("sender_name") or "Ẩn danh"
+                        sender = m.get("sender_name") or "AI"
                         chat_context += f"[{sender}]: {m.get('content')}\n"
+
+                    # Cập nhật cooldown
+                    ai_cooldowns[room_id] = datetime.now(timezone.utc)
+
+                    # Lấy preferences người dùng cho AI Memory
+                    user_prefs = user_obj.get("ai_preferences")
 
                     # CHẠY REALTIME BACKGROUND TASK
                     asyncio.create_task(run_ai_generation_task(
@@ -485,7 +552,9 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         username=username,
                         ai_msg_id=ai_msg_id,
                         ai_identity=ai_identity,
-                        is_suggestion_mode=is_suggestion_mode
+                        is_suggestion_mode=is_suggestion_mode,
+                        is_ai_room=is_ai_room or is_explicit_call, # Coi như AI room để luôn có suggestions
+                        user_prefs=user_prefs
                     ))
                 # --- AI LOGIC END ---
 
@@ -528,6 +597,21 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                             "message_id": msg_id,
                             "room_id": room_id
                         })
+
+            elif msg_type == "delete_for_me":
+                # Messenger style: Xóa phía bản thân (ẩn tin nhắn)
+                msg_id = message_json.get("message_id")
+                if msg_id:
+                    await db["messages"].update_one(
+                        {"id": msg_id},
+                        {"$addToSet": {"deleted_by_users": user_id}}
+                    )
+                    # Chỉ phản hồi về cho chính user thực hiện để cập nhật UI locally
+                    await manager.send_to_user(user_id, {
+                        "type": "delete_for_me_success",
+                        "message_id": msg_id,
+                        "room_id": room_id
+                    })
 
             elif msg_type == "pin":
                 msg_id = message_json.get("message_id")
