@@ -21,6 +21,7 @@ export interface Room {
   icon?: string;
   avatar_url?: string;
   is_online?: boolean;
+  is_pinned?: boolean;
   last_message?: string;
   last_message_id?: string;
   last_message_sender?: string;
@@ -38,6 +39,7 @@ export interface Message {
   file_type?: 'image' | 'file';
   timestamp: string; // ISO string
   isBot: boolean;
+  status?: 'sending' | 'sent' | 'delivered' | 'seen';
   isStreaming?: boolean;  // New features
   is_edited?: boolean;
   is_recalled?: boolean;

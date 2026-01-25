@@ -32,6 +32,8 @@ interface ChatState {
     clearSuggestion: () => void;
     uploadFile: (file: File) => Promise<{ url: string, type: 'image' | 'file', filename: string }>;
     clearHistory: (roomId: string) => Promise<void>;
+    togglePin: (roomId: string) => Promise<void>;
+    sendReadReceipt: (roomId: string, messageId?: string) => void;
     searchMessages: (query: string) => Promise<void>;
     setSearchQuery: (query: string) => void;
     toggleMute: () => void;
@@ -73,9 +75,17 @@ export const useChatStore = create<ChatState>((set, get) => {
             set({ isLoading: true });
             try {
                 const response = await chatService.getRooms();
-                set({ rooms: response.data });
-                if (response.data.length > 0 && !get().activeRoom) {
-                    get().setActiveRoom(response.data[0]);
+                const sortedRooms = response.data.sort((a: any, b: any) => {
+                    if (a.is_pinned && !b.is_pinned) return -1;
+                    if (!a.is_pinned && b.is_pinned) return 1;
+                    // Nếu cùng trạng thái ghim, sắp xếp theo thời gian cập nhật
+                    const timeA = new Date(a.updated_at || 0).getTime();
+                    const timeB = new Date(b.updated_at || 0).getTime();
+                    return timeB - timeA;
+                });
+                set({ rooms: sortedRooms });
+                if (sortedRooms.length > 0 && !get().activeRoom) {
+                    get().setActiveRoom(sortedRooms[0]);
                 }
             } catch (error) {
                 console.error('Fetch rooms failed:', error);
@@ -86,6 +96,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
         setActiveRoom: async (room: Room) => {
             set({ activeRoom: room, messages: [], isLoading: true });
+            get().sendReadReceipt(room.id);
             try {
                 const response = await chatService.getMessages(room.id);
                 const formattedMessages: Message[] = response.data.map((m: any) => ({
@@ -199,9 +210,31 @@ export const useChatStore = create<ChatState>((set, get) => {
                             is_edited: data.is_edited,
                             is_recalled: data.is_recalled,
                             is_pinned: data.is_pinned,
+                            status: data.status,
                             reply_to_id: data.reply_to_id,
                             reply_to_content: data.reply_to_content
                         });
+                        
+                        // Nếu đang ở đúng phòng, tự động gửi read receipt cho tin nhắn mới
+                        const currentUserId = useAuthStore.getState().currentUser?.id;
+                        if (get().activeRoom?.id === data.room_id && data.sender_id !== currentUserId) {
+                            get().sendReadReceipt(data.room_id, data.message_id);
+                        }
+                        break;
+                    case 'read_receipt':
+                        set(state => ({
+                            messages: state.messages.map(m => {
+                                if (data.message_id) {
+                                    if (m.id === data.message_id) return { ...m, status: 'seen' };
+                                } else {
+                                    // Tất cả tin nhắn trong phòng từ người khác gửi
+                                    if (m.senderId !== data.user_id && m.status !== 'seen') {
+                                        return { ...m, status: 'seen' };
+                                    }
+                                }
+                                return m;
+                            })
+                        }));
                         break;
                     case 'edit_message':
                         set(state => {
@@ -466,6 +499,34 @@ export const useChatStore = create<ChatState>((set, get) => {
                 console.error('Clear history error:', error);
             } finally {
                 set({ isLoading: false });
+            }
+        },
+
+        togglePin: async (roomId: string) => {
+            try {
+                await chatService.togglePin(roomId);
+                set(state => ({
+                    rooms: state.rooms.map(r => 
+                        r.id === roomId ? { ...r, is_pinned: !r.is_pinned } : r
+                    ).sort((a, b) => {
+                        if (a.is_pinned && !b.is_pinned) return -1;
+                        if (!a.is_pinned && b.is_pinned) return 1;
+                        return 0;
+                    })
+                }));
+            } catch (error) {
+                console.error('Toggle pin failed:', error);
+            }
+        },
+
+        sendReadReceipt: (roomId: string, messageId?: string) => {
+            const { socket } = get();
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    type: 'read_receipt',
+                    room_id: roomId,
+                    message_id: messageId
+                }));
             }
         },
 

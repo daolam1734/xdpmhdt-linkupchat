@@ -22,7 +22,10 @@ import {
     Trash2,
     Smile,
     ExternalLink,
-    Sparkles
+    Sparkles,
+    Check,
+    CheckCheck,
+    CircleDashed
 } from 'lucide-react';
 
 interface MessageItemProps {
@@ -276,6 +279,28 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                         </div>
                     )}
                 </div>
+
+                {isMe && !message.is_recalled && (
+                    <div className={clsx(
+                        "flex items-center mt-1 mb-1",
+                        isMe ? "justify-end mr-1" : "justify-start ml-1"
+                    )}>
+                        {message.status === 'sending' && (
+                            <CircleDashed size={10} className="text-gray-400 animate-spin" />
+                        )}
+                        {message.status === 'sent' && (
+                            <Check size={10} className="text-gray-400 border border-gray-400 rounded-full p-[1px]" />
+                        )}
+                        {message.status === 'delivered' && (
+                            <CheckCheck size={12} className="text-gray-400" />
+                        )}
+                        {message.status === 'seen' && (
+                            <div className="w-3 h-3 rounded-full bg-blue-500 flex items-center justify-center shadow-sm">
+                                <CheckCheck size={8} className="text-white" />
+                            </div>
+                        )}
+                    </div>
+                )}
               
                 {message.isStreaming && (
                     <div className="flex items-center space-x-1 mt-2 mb-1 ml-1 opacity-60">

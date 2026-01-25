@@ -2,15 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { 
     Search, X, 
     MessageCircle, Users,
-    UserPlus, Clock
+    UserPlus, Clock,
+    MoreHorizontal, Trash2,
+    User, BellOff,
+    Pin, PinOff
 } from 'lucide-react';
 import type { Room } from '../../types/chat';
 import { Avatar } from '../common/Avatar';
+import { ConfirmModal } from '../common/ConfirmModal';
 import { clsx } from 'clsx';
 import { searchUsers, startDirectChat, sendFriendRequest, acceptFriendRequest, rejectFriendRequest, getPendingRequests } from '../../api/users';
 import type { UserSearchItem, FriendRequest } from '../../api/users';
 import { formatRelativeTime } from '../../utils/time';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useChatStore } from '../../store/useChatStore';
 import { ProfileModal } from '../chat/ProfileModal';
 import toast from 'react-hot-toast';
 
@@ -28,7 +33,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
     const [isSearching, setIsSearching] = useState(false);
     const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
     const [viewingUser, setViewingUser] = useState<UserSearchItem | null>(null);
+    const [menuRoomId, setMenuRoomId] = useState<string | null>(null);
+    const [deleteConfirmRoomId, setDeleteConfirmRoomId] = useState<string | null>(null);
     const { currentUser } = useAuthStore();
+    const { clearHistory, togglePin } = useChatStore();
+
+    useEffect(() => {
+        const handleClickOutside = () => setMenuRoomId(null);
+        window.addEventListener('click', handleClickOutside);
+        return () => window.removeEventListener('click', handleClickOutside);
+    }, []);
 
     useEffect(() => {
         const fetchPending = async () => {
@@ -101,6 +115,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
         } catch (error) {
             console.error('Accept error:', error);
             toast.error("Lỗi khi chấp nhận kết bạn");
+        }
+    };
+
+    const handleDeleteHistory = async (roomId: string) => {
+        try {
+            await clearHistory(roomId);
+            toast.success('Đã xóa lịch sử trò chuyện');
+            setDeleteConfirmRoomId(null);
+        } catch (error) {
+            toast.error('Lỗi khi xóa lịch sử');
         }
     };
 
@@ -275,9 +299,38 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                                     </div>
                                     <p className="text-[12.5px] text-gray-500 font-medium truncate">Đang hoạt động • Luôn phản hồi</p>
                                 </div>
-                                {activeRoomId === room.id && (
-                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-purple-600 rounded-full animate-pulse shadow-[0_0_8px_rgba(147,51,234,0.5)]" />
-                                )}
+                                
+                                <div className="relative flex items-center">
+                                    {activeRoomId === room.id ? (
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-purple-600 rounded-full animate-pulse shadow-[0_0_8px_rgba(147,51,234,0.5)]" />
+                                    ) : (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setMenuRoomId(menuRoomId === room.id ? null : room.id);
+                                            }}
+                                            className="ml-2 p-1.5 hover:bg-purple-100 rounded-full text-purple-400 opacity-0 group-hover:opacity-100 transition-all"
+                                        >
+                                            <MoreHorizontal size={18} />
+                                        </button>
+                                    )}
+
+                                    {menuRoomId === room.id && (
+                                        <div className="absolute right-0 top-10 w-56 bg-white border border-gray-100 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in zoom-in duration-200">
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setMenuRoomId(null);
+                                                    setDeleteConfirmRoomId(room.id);
+                                                }}
+                                                className="w-full flex items-center px-4 py-2.5 text-[14px] text-red-600 hover:bg-red-50 transition-colors"
+                                            >
+                                                <Trash2 size={16} className="mr-3 text-red-400" />
+                                                Xóa lịch sử trò chuyện
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </button>
                         ))}
 
@@ -298,12 +351,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                                 
                                 <div className="flex-1 text-left overflow-hidden pr-2">
                                     <div className="flex justify-between items-baseline">
-                                        <span className={clsx(
-                                            "truncate text-[15px]",
-                                            activeRoomId === room.id ? "font-bold text-blue-600" : "font-semibold text-gray-900"
-                                        )}>
-                                            {room.name}
-                                        </span>
+                                        <div className="flex items-center overflow-hidden">
+                                            <span className={clsx(
+                                                "truncate text-[15px]",
+                                                activeRoomId === room.id ? "font-bold text-blue-600" : "font-semibold text-gray-900"
+                                            )}>
+                                                {room.name}
+                                            </span>
+                                            {room.is_pinned && (
+                                                <Pin size={12} className="ml-1.5 text-blue-500 fill-blue-500 shrink-0" />
+                                            )}
+                                        </div>
                                         {(room.last_message_at || room.updated_at) && (
                                             <span className="text-[11px] text-gray-500 flex-shrink-0 ml-2">
                                                 {formatRelativeTime(room.last_message_at || room.updated_at || '')}
@@ -323,9 +381,69 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                                     </div>
                                 </div>
 
-                                {activeRoomId !== room.id && (
-                                    <div className="w-2.5 h-2.5 bg-blue-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
-                                )}
+                                <div className="relative flex items-center">
+                                    {activeRoomId !== room.id && (
+                                        <div className="w-2.5 h-2.5 bg-blue-600 rounded-full opacity-0 group-hover:opacity-40 transition-opacity" />
+                                    )}
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setMenuRoomId(menuRoomId === room.id ? null : room.id);
+                                        }}
+                                        className="ml-2 p-1.5 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-all"
+                                    >
+                                        <MoreHorizontal size={18} />
+                                    </button>
+
+                                    {menuRoomId === room.id && (
+                                        <div className="absolute right-0 top-10 w-56 bg-white border border-gray-100 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in zoom-in duration-200">
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setMenuRoomId(null);
+                                                    togglePin(room.id);
+                                                    toast.success(room.is_pinned ? "Đã bỏ ghim" : "Đã ghim đoạn chat");
+                                                }}
+                                                className="w-full flex items-center px-4 py-2.5 text-[14px] text-gray-700 hover:bg-gray-50 transition-colors"
+                                            >
+                                                {room.is_pinned ? (
+                                                    <>
+                                                        <PinOff size={16} className="mr-3 text-gray-400" />
+                                                        Bỏ ghim
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Pin size={16} className="mr-3 text-gray-400" />
+                                                        Ghim đoạn chat
+                                                    </>
+                                                )}
+                                            </button>
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setMenuRoomId(null);
+                                                    toast.success("Đã tắt thông báo");
+                                                }}
+                                                className="w-full flex items-center px-4 py-2.5 text-[14px] text-gray-700 hover:bg-gray-50 transition-colors"
+                                            >
+                                                <BellOff size={16} className="mr-3 text-gray-400" />
+                                                Tắt thông báo
+                                            </button>
+                                            <div className="h-px bg-gray-100 my-1"></div>
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setMenuRoomId(null);
+                                                    setDeleteConfirmRoomId(room.id);
+                                                }}
+                                                className="w-full flex items-center px-4 py-2.5 text-[14px] text-red-600 hover:bg-red-50 transition-colors"
+                                            >
+                                                <Trash2 size={16} className="mr-3 text-red-400" />
+                                                Xóa lịch sử trò chuyện
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </button>
                         ))}
                     </div>
@@ -337,9 +455,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                 <ProfileModal 
                     isOpen={!!viewingUser} 
                     onClose={() => setViewingUser(null)} 
-                    user={viewingUser}
+                    user={viewingUser as any}
                 />
             )}
+
+            {/* Delete History Confirm Modal */}
+            <ConfirmModal
+                isOpen={!!deleteConfirmRoomId}
+                onClose={() => setDeleteConfirmRoomId(null)}
+                onConfirm={() => deleteConfirmRoomId && handleDeleteHistory(deleteConfirmRoomId)}
+                title="Xóa lịch sử trò chuyện"
+                message="Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện? Hành động này không thể hoàn tác và tin nhắn sẽ bị ẩn khỏi phía bạn."
+                confirmText="Xác nhận xóa"
+                type="danger"
+            />
 
             {/* Bottom Nav */}
             <div className="flex items-center justify-around py-2 border-t border-gray-100 bg-white">

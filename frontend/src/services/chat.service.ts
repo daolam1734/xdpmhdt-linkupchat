@@ -12,4 +12,5 @@ export const chatService = {
     searchMessages: (query: string, roomId?: string) => api.get(`/messages/search/`, {
         params: { query, room_id: roomId }
     }),
+    togglePin: (roomId: string) => api.post(`/rooms/${roomId}/pin`),
 };
