@@ -49,6 +49,7 @@ export interface Message {
   roomId?: string; // Room identifying the message context
   senderId: string;
   senderName: string;
+  receiver_id?: string;
   content: string;
   file_url?: string;
   file_type?: 'image' | 'file';
@@ -61,6 +62,7 @@ export interface Message {
   is_pinned?: boolean;
   reply_to_id?: string;
   reply_to_content?: string;
+  reactions?: Record<string, string[]>;
   suggestions?: string[];
   suggestionsDismissed?: boolean;
   shared_post?: {

@@ -27,10 +27,14 @@ async def get_room_messages(
 
     # Isolation logic cho phòng đặc biệt (AI Assistant, Help & Support)
     if room_id in ["ai", "help"]:
-        query["$or"] = [
-            {"sender_id": current_user["id"]},
-            {"receiver_id": current_user["id"]}
-        ]
+        # Nếu là Help & Support và là admin, cho phép xem tất cả tin nhắn để phản hồi
+        if room_id == "help" and current_user.get("is_superuser"):
+            pass
+        else:
+            query["$or"] = [
+                {"sender_id": current_user["id"]},
+                {"receiver_id": current_user["id"]}
+            ]
 
     messages = await db["messages"].find(query).sort("timestamp", 1).limit(limit).to_list(length=limit)
     return messages

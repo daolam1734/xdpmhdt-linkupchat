@@ -82,7 +82,20 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
     }
 
     if (text.trim()) {
-      onSendMessage(text, replyingTo?.id);
+      // Logic đặc biệt cho Admin trong phòng Help & Support
+      let receiverId = undefined;
+      const currentUser = useAuthStore.getState().currentUser;
+      const { activeRoom, replyingTo } = useChatStore.getState();
+      
+      if (activeRoom?.id === 'help' && currentUser?.is_superuser && replyingTo) {
+          // Khi admin reply một tin nhắn trong Help room, ta lấy sender_id của người hỏi làm người nhận
+          // Nếu người hỏi là AI (isBot=true), ta tìm xem có context nào khác không (thông thường admin reply user)
+          if (!replyingTo.isBot) {
+              receiverId = replyingTo.senderId;
+          }
+      }
+
+      onSendMessage(text, replyingTo?.id, undefined, receiverId);
       setText('');
       if (textareaRef.current) {
         textareaRef.current.style.height = '40px';

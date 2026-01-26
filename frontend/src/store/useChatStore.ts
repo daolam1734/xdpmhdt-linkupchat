@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Message, Room } from '../types/chat';
+import type { Message, Room, User } from '../types/chat';
 import { chatService } from '../services/chat.service';
 import { useAuthStore } from './useAuthStore';
 import { toast } from 'react-hot-toast';
@@ -27,7 +27,7 @@ interface ChatState {
     setViewingUser: (user: User | null) => void;
     connect: (token: string) => void;
     disconnect: () => void;
-    sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }) => boolean;
+    sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }, receiverId?: string) => boolean;
     editMessage: (messageId: string, content: string) => void;
     recallMessage: (messageId: string) => void;
     deleteMessageForMe: (messageId: string) => void;
@@ -575,7 +575,7 @@ export const useChatStore = create<ChatState>((set, get) => {
             set({ isConnected: false, socket: null, messages: [], replyingTo: null, editingMessage: null });
         },
 
-        sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }) => {
+        sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }, receiverId?: string) => {
             const { socket, activeRoom } = get();
             if (socket && socket.readyState === WebSocket.OPEN && activeRoom) {
                 socket.send(JSON.stringify({
@@ -583,6 +583,7 @@ export const useChatStore = create<ChatState>((set, get) => {
                     content,
                     room_id: activeRoom.id,
                     reply_to_id: replyToId,
+                    receiver_id: receiverId,
                     file_url: fileData?.url,
                     file_type: fileData?.type
                 }));

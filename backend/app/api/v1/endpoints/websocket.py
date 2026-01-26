@@ -151,6 +151,76 @@ async def notify_user_status_change(user_id: str, is_online: bool):
     except Exception as e:
         print(f"Error in notify_user_status_change: {e}")
 
+async def handle_admin_offline_catchup(admin_id: str):
+    """
+    Khi một Admin offline, kiểm tra xem còn Admin nào khác online không.
+    Nếu không còn Admin nào, tìm các tin nhắn chưa được trả lời trong phòng 'help' để AI trả lời.
+    """
+    try:
+        # Kiểm tra xem còn admin nào online không
+        active_admins_count = await db["users"].count_documents({
+            "is_superuser": True, 
+            "is_online": True,
+            "id": {"$ne": admin_id}
+        })
+
+        if active_admins_count == 0:
+            # Không còn admin nào online -> Kích hoạt AI trả lời các câu hỏi tồn đọng
+            # Ta tìm các user đã gửi tin nhắn vào phòng 'help' mà tin nhắn cuối cùng của họ chưa được Admin/AI trả lời
+            
+            # Lấy danh sách user_id đã từng nhắn vào 'help'
+            help_messages = await db["messages"].aggregate([
+                {"$match": {"room_id": "help", "is_bot": False}},
+                {"$group": {"_id": "$sender_id", "last_msg": {"$last": "$$ROOT"}}}
+            ]).to_list(length=100)
+
+            for entry in help_messages:
+                user_id = entry["_id"]
+                last_msg = entry["last_msg"]
+                
+                # Kiểm tra xem tin nhắn cuối cùng trong context của user này đã có phản hồi chưa
+                has_reply = await db["messages"].find_one({
+                    "room_id": "help",
+                    "timestamp": {"$gt": last_msg["timestamp"]},
+                    "$or": [
+                        {"receiver_id": user_id},
+                        {"is_bot": True}
+                    ]
+                })
+
+                if not has_reply:
+                    # AI bắt đầu trả lời
+                    ai_msg_id = str(uuid.uuid4())
+                    
+                    user_obj = await db["users"].find_one({"id": user_id})
+                    if not user_obj: continue
+                    username = user_obj.get("username", "Người dùng")
+                    
+                    chat_context = f"Hệ thống: Admin vừa ngoại tuyến. AI đang tiếp quản hỗ trợ.\n--- Lịch sử chat gần đây ---\n"
+                    # Lấy tin nhắn liên quan đến user này
+                    recent_msgs = await db["messages"].find({
+                        "room_id": "help",
+                        "$or": [{"sender_id": user_id}, {"receiver_id": user_id}, {"is_bot": True}]
+                    }).sort("timestamp", -1).limit(5).to_list(length=5)
+                    recent_msgs.reverse()
+                    
+                    for m in recent_msgs:
+                        sender = m.get("sender_name") or "AI"
+                        chat_context += f"[{sender}]: {m.get('content')}\n"
+
+                    # Chạy task AI
+                    asyncio.create_task(run_ai_generation_task(
+                        room_id="help",
+                        prompt=last_msg["content"],
+                        chat_context=chat_context,
+                        user_id=user_id,
+                        username=username,
+                        ai_msg_id=ai_msg_id,
+                        ai_identity="LinkUp Support"
+                    ))
+    except Exception as e:
+        print(f"Error in admin catchup: {e}")
+
 async def notify_block_status_change(target_user_id: str, by_user_id: str, is_blocked: bool):
     """
     Thông báo thời gian thực về trạng thái chặn/bỏ chặn cho cả người chặn và người bị chặn.
@@ -579,6 +649,8 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                 shared_post = message_json.get("shared_post")
 
                 msg_id = str(uuid.uuid4())
+                receiver_id = message_json.get("receiver_id")
+                
                 db_msg = {
                     "id": msg_id,
                     "content": content,
@@ -586,6 +658,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     "file_type": file_type,
                     "sender_id": user_id,
                     "sender_name": username,
+                    "receiver_id": receiver_id,
                     "room_id": room_id,
                     "timestamp": now,
                     "is_bot": False,
@@ -607,6 +680,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     "sender_id": user_id,
                     "sender_name": username,
                     "sender_avatar": user_obj.get("avatar") or user_obj.get("avatar_url"),
+                    "receiver_id": receiver_id,
                     "content": content,
                     "file_url": file_url,
                     "file_type": file_type,
@@ -619,7 +693,21 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     "shared_post": shared_post
                 }
                 
-                if room_id in SELF_ISOLATED_ROOMS:
+                if room_id == "help":
+                    # Luôn gửi cho người gửi
+                    await manager.send_to_user(user_id, metadata)
+                    
+                    # Nếu người gửi KHÔNG phải admin, gửi cho tất cả admin online
+                    if not user_obj.get("is_superuser"):
+                        admins = await db["users"].find({"is_superuser": True, "is_online": True}).to_list(length=50)
+                        for admin in admins:
+                            if admin["id"] != user_id:
+                                await manager.send_to_user(admin["id"], metadata)
+                    else:
+                        # Nếu người gửi LÀ admin, họ phải có receiver_id để phản hồi đúng người
+                        if receiver_id:
+                            await manager.send_to_user(receiver_id, metadata)
+                elif room_id in SELF_ISOLATED_ROOMS:
                     await manager.send_to_user(user_id, metadata)
                 else:
                     await manager.broadcast_to_room(room_id, metadata)
@@ -642,6 +730,11 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                 should_ai_respond = False
                 if is_ai_room:
                     should_ai_respond = True
+                    # Nếu là phòng Help & Support, không AI phản hồi nếu có Admin online
+                    if room_id == "help":
+                        active_admins_count = await db["users"].count_documents({"is_superuser": True, "is_online": True})
+                        if active_admins_count > 0:
+                            should_ai_respond = False
                 elif is_explicit_call:
                     # Trích xuất prompt sạch để kiểm tra độ dài
                     test_prompt = content
@@ -783,6 +876,11 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
         )
         # Thông báo cho bạn bè
         await notify_user_status_change(user_id, False)
+
+        # Nếu là Admin offline, kiểm tra để AI tiếp quản Help room
+        if user_obj.get("is_superuser"):
+            asyncio.create_task(handle_admin_offline_catchup(user_id))
+            
         print(f"ℹ️ WebSocket Disconnected: User {user_id}")
     except Exception as e:
         print(f"❌ WebSocket error ({user_id}): {e}")
@@ -795,6 +893,9 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                     {"$set": {"is_online": False, "last_seen": now}}
                 )
                 await notify_user_status_change(user_id, False)
+                # Nếu là Admin offline
+                if user_obj.get("is_superuser"):
+                    asyncio.create_task(handle_admin_offline_catchup(user_id))
         except:
             pass
 
