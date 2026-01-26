@@ -22,11 +22,14 @@ function App() {
     if (token && currentUser) {
         fetchRooms();
         connect(token);
-        setView('chat');
+        // Chỉ chuyển sang view 'chat' nếu đang ở view ngoài (landing/auth)
+        if (currentView === 'landing' || currentView === 'auth') {
+            setView('chat');
+        }
     } else {
         disconnect();
     }
-  }, [token, currentUser, fetchRooms, connect, disconnect, setView]);
+  }, [token, currentUser, fetchRooms, connect, disconnect, setView, currentView]);
 
   const renderContent = () => {
     if (authLoading && !currentUser) {
@@ -45,7 +48,7 @@ function App() {
     }
 
     if (token && currentUser) {
-      if (currentView === 'admin' && currentUser.is_superuser) {
+      if (currentView === 'admin' && (currentUser.role === 'admin' || currentUser.is_superuser)) {
           return <AdminPage onBack={() => setView('chat')} />;
       }
       return (

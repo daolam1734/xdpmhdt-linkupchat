@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { Message, Room, User } from '../types/chat';
 import { chatService } from '../services/chat.service';
 import { useAuthStore } from './useAuthStore';
@@ -40,6 +41,7 @@ interface ChatState {
     uploadFile: (file: File) => Promise<{ url: string, type: 'image' | 'file', filename: string }>;
     clearHistory: (roomId: string) => Promise<void>;
     togglePin: (roomId: string) => Promise<void>;
+    deleteRoom: (roomId: string) => Promise<void>;
     sendReadReceipt: (roomId: string, messageId?: string) => void;
     searchMessages: (query: string) => Promise<void>;
     setSearchQuery: (query: string) => void;
@@ -51,7 +53,9 @@ interface ChatState {
 
 const RECONNECT_INTERVALS = [1000, 2000, 5000, 10000];
 
-export const useChatStore = create<ChatState>((set, get) => {
+export const useChatStore = create<ChatState>()(
+    persist(
+        (set, get) => {
     let reconnectAttempt = 0;
     let heartBeatTimer: number | null = null;
 
@@ -94,7 +98,18 @@ export const useChatStore = create<ChatState>((set, get) => {
                     const timeB = new Date(b.updated_at || 0).getTime();
                     return timeB - timeA;
                 });
+                
                 set({ rooms: sortedRooms });
+                
+                // Cập nhật activeRoom nếu nó đang tồn tại (từ persist) để đồng bộ dữ liệu mới nhất
+                const currentActive = get().activeRoom;
+                if (currentActive) {
+                    const freshRoom = sortedRooms.find((r: any) => r.id === currentActive.id);
+                    if (freshRoom) {
+                        set({ activeRoom: freshRoom });
+                    }
+                }
+
                 if (sortedRooms.length > 0 && !get().activeRoom && !get().viewingUser) {
                     get().setActiveRoom(sortedRooms[0]);
                 }
@@ -730,6 +745,23 @@ export const useChatStore = create<ChatState>((set, get) => {
             }
         },
 
+        deleteRoom: async (roomId: string) => {
+            set({ isLoading: true });
+            try {
+                await chatService.deleteRoom(roomId);
+                set(state => ({
+                    rooms: state.rooms.filter(r => r.id !== roomId),
+                    activeRoom: state.activeRoom?.id === roomId ? null : state.activeRoom,
+                    messages: state.activeRoom?.id === roomId ? [] : state.messages
+                }));
+            } catch (error) {
+                console.error('Delete room error:', error);
+                throw error;
+            } finally {
+                set({ isLoading: false });
+            }
+        },
+
         sendReadReceipt: (roomId: string, messageId?: string) => {
             const { socket } = get();
             if (socket && socket.readyState === WebSocket.OPEN) {
@@ -771,4 +803,13 @@ export const useChatStore = create<ChatState>((set, get) => {
 
         setActiveDropdown: (id: string | null) => set({ activeDropdownId: id }),
     };
-});
+},
+{
+    name: 'linkup-chat-storage',
+    partialize: (state: ChatState) => ({ 
+        activeRoom: state.activeRoom, 
+        viewingUser: state.viewingUser,
+        isMuted: state.isMuted 
+    }),
+}
+));
