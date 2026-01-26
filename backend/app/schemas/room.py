@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class RoomBase(BaseModel):
@@ -20,6 +20,10 @@ class RoomBase(BaseModel):
 
 class RoomCreate(RoomBase):
     pass
+
+class GroupCreate(BaseModel):
+    name: str
+    member_ids: List[str]
 
 class Room(RoomBase):
     class Config:
