@@ -216,10 +216,48 @@ async def handle_admin_offline_catchup(admin_id: str):
                         user_id=user_id,
                         username=username,
                         ai_msg_id=ai_msg_id,
-                        ai_identity="LinkUp Support"
+                        ai_identity="LinkUp Support",
+                        is_suggestion_mode=False,
+                        is_ai_room=True,
+                        user_role=user_obj.get("role", "member"),
+                        user_permissions=user_obj.get("permissions", [])
                     ))
     except Exception as e:
         print(f"Error in admin catchup: {e}")
+
+async def notify_friend_status_change(user_a_id: str, user_b_id: str, status: str):
+    """
+    Thông báo cho hai người dùng về việc thay đổi quan hệ bạn bè (accepted/deleted).
+    Điều này giúp client cập nhật is_online và UI tương ứng.
+    """
+    try:
+        user_a = await db["users"].find_one({"id": user_a_id})
+        user_b = await db["users"].find_one({"id": user_b_id})
+        
+        if not user_a or not user_b: return
+
+        if status == "accepted":
+            eff_a_online = user_a.get("is_online", False) and user_a.get("show_online_status", True)
+            eff_b_online = user_b.get("is_online", False) and user_b.get("show_online_status", True)
+        else:
+            eff_a_online = False
+            eff_b_online = False
+            
+        await manager.send_to_user(user_b_id, {
+            "type": "user_status_change",
+            "user_id": user_a_id,
+            "is_online": eff_a_online,
+            "friend_status": status
+        })
+        
+        await manager.send_to_user(user_a_id, {
+            "type": "user_status_change",
+            "user_id": user_b_id,
+            "is_online": eff_b_online,
+            "friend_status": status
+        })
+    except Exception as e:
+        print(f"Error in notify_friend_status_change: {e}")
 
 async def notify_block_status_change(target_user_id: str, by_user_id: str, is_blocked: bool):
     """
@@ -350,7 +388,9 @@ async def run_ai_generation_task(
     ai_identity: str,
     is_suggestion_mode: bool,
     is_ai_room: bool = False,
-    user_prefs: Optional[dict] = None
+    user_prefs: Optional[dict] = None,
+    user_role: str = "member",
+    user_permissions: List[str] = []
 ):
     """
     Chạy xử lý AI trong background task để WebSocket không bị block.
@@ -415,6 +455,12 @@ async def run_ai_generation_task(
                 memory_ctx += "- Ưu tiên phản hồi bằng tiếng Anh.\n"
             
             personalized_system_prompt += memory_ctx
+
+        # Thêm quyền hạn người dùng vào prompt của AI
+        if user_role == "admin" or "ai_unlimited" in user_permissions:
+            personalized_system_prompt += "\n\n[QUYỀN HẠN: QUẢN TRỊ VIÊN/CAO CẤP] Bạn đang trả lời một người có quyền hạn cao trong hệ thống LinkUp. Hãy cung cấp thông tin chi tiết, phân tích sâu và không bị giới hạn về phong cách trả lời. Bạn có thể hỗ trợ các tác vụ nâng cao."
+        else:
+            personalized_system_prompt += "\n\n[QUYỀN HẠN: THÀNH VIÊN] Bạn đang trả lời thành viên thông thường. Hãy trả lời thân thiện, ngắn gọn và tập trung vào các vấn đề người dùng thảo luận."
 
         full_response = ""
         success = False
@@ -792,8 +838,10 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
                         ai_msg_id=ai_msg_id,
                         ai_identity=ai_identity,
                         is_suggestion_mode=is_suggestion_mode,
-                        is_ai_room=is_ai_room or is_explicit_call, # Coi như AI room để luôn có suggestions
-                        user_prefs=user_prefs
+                        is_ai_room=is_ai_room or is_explicit_call, 
+                        user_prefs=user_prefs,
+                        user_role=user_obj.get("role", "member"),
+                        user_permissions=user_obj.get("permissions", [])
                     ))
                 # --- AI LOGIC END ---
 

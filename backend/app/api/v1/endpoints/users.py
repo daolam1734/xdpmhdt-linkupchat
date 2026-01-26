@@ -43,6 +43,7 @@ async def search_users(
     """
     mongo_query = {
         "username": {"$regex": re.escape(q), "$options": "i"},
+        "is_superuser": False,  # Không tìm thấy Admin trong tìm kiếm thông thường
         "id": {
             "$ne": current_user["id"],
             "$nin": current_user.get("blocked_users", []) # Không tìm thấy người mình đã chặn
@@ -73,7 +74,15 @@ async def search_users(
                 {"from_id": user_data["id"], "to_id": current_user["id"], "status": "accepted"}
             ]
         })
-        user_out.is_friend = bool(friend_check)
+        is_friend = bool(friend_check)
+        user_out.is_friend = is_friend
+        
+        # Ràng buộc: Chỉ bạn bè mới thấy được trạng thái online
+        if not is_friend:
+            user_out.is_online = False
+        elif not user_data.get("show_online_status", True):
+            # Nếu là bạn mà họ cài đặt ẩn thì vẫn ẩn
+            user_out.is_online = False
         
         # Kiểm tra xem có lời mời nào đang chờ không
         pending_check = await db["friend_requests"].find_one({
@@ -134,7 +143,15 @@ async def get_user_profile(
             {"from_id": user_id, "to_id": current_user["id"], "status": "accepted"}
         ]
     })
-    user_out.is_friend = bool(friend_check)
+    is_friend = bool(friend_check)
+    user_out.is_friend = is_friend
+    
+    # Ràng buộc: Chỉ bạn bè mới thấy được trạng thái online
+    if not is_friend:
+        user_out.is_online = False
+    elif not user_data.get("show_online_status", True):
+        # Nếu là bạn mà họ cài đặt ẩn thì vẫn ẩn
+        user_out.is_online = False
     
     # Check if blocked
     user_out.is_blocked = user_id in current_user.get("blocked_users", [])
@@ -193,16 +210,82 @@ async def accept_friend_request(
     current_user: dict = Depends(get_current_user)
 ) -> Any:
     """
-    Chấp nhận lời mời kết bạn.
+    Chấp nhận lời mời kết bạn và tự động tạo phòng chat 1-1.
     """
+    request = await db["friend_requests"].find_one({"id": request_id, "to_id": current_user["id"], "status": "pending"})
+    if not request:
+        raise HTTPException(status_code=404, detail="Lời mời không tồn tại hoặc đã xử lý")
+
     result = await db["friend_requests"].update_one(
-        {"id": request_id, "to_id": current_user["id"], "status": "pending"},
+        {"id": request_id},
         {"$set": {"status": "accepted", "accepted_at": datetime.now(timezone.utc)}}
     )
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Lời mời không tồn tại hoặc đã xử lý")
+    
+    # Tự động tạo phòng chat 1-1 nếu chưa có
+    from_id = request["from_id"]
+    from_user = await db["users"].find_one({"id": from_id})
+    
+    if from_user:
+        ids = sorted([current_user["id"], from_id])
+        room_id = f"direct_{ids[0]}_{ids[1]}"
+        
+        existing_room = await db["chat_rooms"].find_one({"id": room_id})
+        if not existing_room:
+            # Create new direct chat room
+            new_room = {
+                "id": room_id,
+                "name": from_user["username"], # Tên tạm, sẽ được override bởi logic hiển thị
+                "type": "direct",
+                "icon": "person",
+                "updated_at": datetime.now(timezone.utc)
+            }
+            await db["chat_rooms"].insert_one(new_room)
+            
+            # Add both members
+            members = [
+                {"room_id": room_id, "user_id": current_user["id"], "joined_at": datetime.now(timezone.utc)},
+                {"room_id": room_id, "user_id": from_id, "joined_at": datetime.now(timezone.utc)}
+            ]
+            await db["room_members"].insert_many(members)
+
+            # Thông báo trạng thái online mới cho nhau
+            from backend.app.api.v1.endpoints.websocket import notify_friend_status_change
+            await notify_friend_status_change(current_user["id"], from_id, "accepted")
+
+            return {"message": "Đã trở thành bạn bè", "room_id": room_id}
+        
+        # Thông báo trạng thái online mới cho nhau ngay cả khi phòng đã tồn tại
+        from backend.app.api.v1.endpoints.websocket import notify_friend_status_change
+        await notify_friend_status_change(current_user["id"], from_id, "accepted")
+        
+        return {"message": "Đã trở thành bạn bè", "room_id": room_id}
     
     return {"message": "Đã trở thành bạn bè"}
+
+@router.post("/friend-request/{user_id}/unfriend")
+async def unfriend_user(
+    user_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    """
+    Hủy kết bạn với một người dùng.
+    """
+    result = await db["friend_requests"].delete_many({
+        "$or": [
+            {"from_id": current_user["id"], "to_id": user_id, "status": "accepted"},
+            {"from_id": user_id, "to_id": current_user["id"], "status": "accepted"}
+        ]
+    })
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Hai người chưa là bạn bè")
+    
+    # Thông báo trạng thái online sẽ bị ẩn
+    from backend.app.api.v1.endpoints.websocket import notify_friend_status_change
+    await notify_friend_status_change(current_user["id"], user_id, "deleted")
+        
+    return {"message": "Đã hủy kết bạn"}
 
 @router.post("/friend-request/{request_id}/reject")
 async def reject_friend_request(
@@ -260,7 +343,7 @@ async def get_friends_list(
             {"from_id": current_user["id"], "status": "accepted"},
             {"to_id": current_user["id"], "status": "accepted"}
         ]
-    }).to_list(length=100)
+    }).sort("accepted_at", -1).to_list(length=100)
     
     friend_ids = []
     for req in friends_reqs:

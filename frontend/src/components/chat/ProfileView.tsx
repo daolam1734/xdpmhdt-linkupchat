@@ -10,10 +10,11 @@ import {
 import { useAuthStore } from '../../store/useAuthStore';
 import { Avatar } from '../common/Avatar';
 import { ConfirmModal } from '../common/ConfirmModal';
-import { sendFriendRequest, startDirectChat, blockUser, unblockUser, getBlockedList } from '../../api/users';
+import { sendFriendRequest, startDirectChat, blockUser, unblockUser, getBlockedList, unfriendUser } from '../../api/users';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
 import { useChatStore } from '../../store/useChatStore';
+import { UserMinus } from 'lucide-react';
 
 interface ProfileViewProps {
     user?: any;
@@ -32,12 +33,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
     
     const [activeTab, setActiveTab] = useState<TabType>('profile');
     const [username, setUsername] = useState('');
+    const [fullName, setFullName] = useState('');
+    const [email, setEmail] = useState('');
+    const [phone, setPhone] = useState('');
     const [bio, setBio] = useState('');
     const [avatarUrl, setAvatarUrl] = useState('');
     const [isEditing, setIsEditing] = useState(false);
     const [allowStrangers, setAllowStrangers] = useState(true);
     const [showOnlineStatus, setShowOnlineStatus] = useState(true);
     const [requestSent, setRequestSent] = useState(false);
+    const [isFriendLocal, setIsFriendLocal] = useState(false);
     const [isBlocked, setIsBlocked] = useState(false);
     const [blockedByOther, setBlockedByOther] = useState(false);
     const [showBlockConfirm, setShowBlockConfirm] = useState(false);
@@ -67,10 +72,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
     useEffect(() => {
         if (initialTarget) {
             setUsername(initialTarget.username || '');
+            setFullName(initialTarget.full_name || '');
+            setEmail(initialTarget.email || '');
+            setPhone(initialTarget.phone || '');
             setBio(initialTarget.bio || '');
             setAllowStrangers(initialTarget.allow_stranger_messages ?? true);
             setShowOnlineStatus(initialTarget.show_online_status ?? true);
             setRequestSent(initialTarget.request_sent || false);
+            setIsFriendLocal(initialTarget.is_friend || false);
             setIsBlocked(initialTarget.is_blocked || false);
             setBlockedByOther(initialTarget.blocked_by_other || false);
             
@@ -93,6 +102,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
         try {
             await updateProfile({ 
                 username, 
+                full_name: fullName,
+                email,
+                phone,
                 bio, 
                 avatar_url: avatarUrl,
                 allow_stranger_messages: allowStrangers,
@@ -137,6 +149,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
         }
     }, [initialTarget.id, initialTarget.is_friend, requestSent, setActiveRoom]);
 
+    const handleUnfriend = async () => {
+        try {
+            await unfriendUser(initialTarget.id);
+            setIsFriendLocal(false);
+            toast.success("Đã hủy kết bạn");
+        } catch (err) {
+            toast.error("Hủy kết bạn thất bại");
+        }
+    };
+
     const handleToggleBlock = async () => {
         if (!isBlocked && !showBlockConfirm) {
             setShowBlockConfirm(true);
@@ -172,11 +194,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
     const profileContent = useMemo(() => (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-10">
             {/* User Stats Grid */}
-            <div className="grid grid-cols-3 gap-6">
+            <div className="grid grid-cols-2 gap-6">
                 {[
                     { label: 'Tin nhắn', value: initialTarget.message_count || '0', icon: MessageCircle, color: 'text-blue-600', bg: 'bg-blue-50' },
                     { label: 'Bạn bè', value: initialTarget.friend_count || '0', icon: UserPlus, color: 'text-purple-600', bg: 'bg-purple-50' },
-                    { label: 'Yêu thích', value: '12', icon: Sparkles, color: 'text-amber-600', bg: 'bg-amber-50' },
                 ].map((stat, i) => (
                     <div key={i} className="bg-white p-6 rounded-[32px] border-2 border-gray-50 flex flex-col items-center justify-center space-y-3 hover:shadow-xl hover:shadow-gray-100 transition-all hover:-translate-y-1 group">
                         <div className={clsx("p-4 rounded-2xl transition-transform group-hover:scale-110", stat.bg, stat.color)}>
@@ -236,6 +257,52 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
                                     </p>
                                 )}
                             </div>
+
+                            {/* Additional Info Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
+                                <div className="space-y-2">
+                                    <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] block">Họ và tên</label>
+                                    {isEditing ? (
+                                        <input 
+                                            type="text"
+                                            value={fullName}
+                                            onChange={(e) => setFullName(e.target.value)}
+                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl p-4 text-gray-700 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 focus:outline-none transition-all font-medium"
+                                            placeholder="Họ và tên đầy đủ"
+                                        />
+                                    ) : (
+                                        <p className="text-gray-900 font-bold">{fullName || 'Chưa cập nhật'}</p>
+                                    )}
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] block">Địa chỉ Email</label>
+                                    {isEditing ? (
+                                        <input 
+                                            type="email"
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl p-4 text-gray-700 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 focus:outline-none transition-all font-medium"
+                                            placeholder="email@example.com"
+                                        />
+                                    ) : (
+                                        <p className="text-gray-900 font-bold">{email || 'Chưa cập nhật'}</p>
+                                    )}
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] block">Số điện thoại</label>
+                                    {isEditing ? (
+                                        <input 
+                                            type="tel"
+                                            value={phone}
+                                            onChange={(e) => setPhone(e.target.value)}
+                                            className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl p-4 text-gray-700 focus:ring-4 focus:ring-blue-100 focus:border-blue-500 focus:outline-none transition-all font-medium"
+                                            placeholder="0123 456 789"
+                                        />
+                                    ) : (
+                                        <p className="text-gray-900 font-bold">{phone || 'Chưa cập nhật'}</p>
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
                         {isOwnProfile ? (
@@ -266,7 +333,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
                                         <><ShieldAlert size={20} /> <span>ĐÃ CHẶN</span></>
                                     ) : blockedByOther ? (
                                         <><ShieldAlert size={20} /> <span>KHÔNG KHẢ DỤNG</span></>
-                                    ) : initialTarget.is_friend ? (
+                                    ) : isFriendLocal ? (
                                         <><MessageSquare size={20} /> <span>NHẮN TIN NGAY</span></>
                                     ) : requestSent ? (
                                         <><Clock size={20} /> <span>ĐÃ GỬI YÊU CẦU</span></>
@@ -274,6 +341,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
                                         <><UserPlus size={20} /> <span>KẾT BẠN</span></>
                                     )}
                                 </button>
+                                
+                                {isFriendLocal && !isOwnProfile && (
+                                    <button 
+                                        onClick={handleUnfriend}
+                                        className="px-8 py-3 rounded-2xl font-black text-[11px] tracking-widest transition-all border-2 border-red-100 text-red-500 hover:bg-red-50 flex items-center justify-center space-x-2 shadow-sm"
+                                    >
+                                        <UserMinus size={18} />
+                                        <span>HỦY KẾT BẠN</span>
+                                    </button>
+                                )}
                                 
                                 <button 
                                     onClick={handleToggleBlock}

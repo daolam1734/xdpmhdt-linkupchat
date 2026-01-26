@@ -56,6 +56,11 @@ export const acceptFriendRequest = async (requestId: string) => {
     return response.data;
 };
 
+export const unfriendUser = async (userId: string) => {
+    const response = await api.post(`/users/friend-request/${userId}/unfriend`);
+    return response.data;
+};
+
 export const rejectFriendRequest = async (requestId: string) => {
     const response = await api.post(`/users/friend-request/${requestId}/reject`);
     return response.data;

@@ -4,12 +4,16 @@ from datetime import datetime
 
 class UserBase(BaseModel):
     username: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
 
 class UserCreate(UserBase):
     password: str
 
 class UserUpdate(BaseModel):
     username: Optional[str] = None
+    email: Optional[str] = None
+    full_name: Optional[str] = None
     password: Optional[str] = None
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
@@ -23,6 +27,9 @@ class User(UserBase):
     id: str
     is_active: bool
     is_superuser: bool = False
+    role: str = "member"  # New: 'admin', 'member'
+    permissions: List[str] = [] # New: granular permissions
+    phone: Optional[str] = None
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
     allow_stranger_messages: bool = True
