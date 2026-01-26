@@ -17,7 +17,7 @@ async def init_db():
         now = datetime.now(timezone.utc)
         default_rooms = [
             {"id": "general", "name": "General", "icon": "hash", "type": "public", "updated_at": now},
-            {"id": "help", "name": "LinkUp Support", "icon": "help-circle", "type": "private", "is_ai_room": True, "updated_at": now},
+            {"id": "help", "name": "Help & Support", "icon": "help-circle", "type": "private", "is_ai_room": True, "updated_at": now},
             {"id": "ai", "name": "AI Assistant", "icon": "bot", "type": "private", "is_ai_room": True, "updated_at": now},
         ]
         await db["chat_rooms"].insert_many(default_rooms)

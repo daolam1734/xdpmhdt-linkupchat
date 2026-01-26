@@ -323,10 +323,17 @@ async def run_ai_generation_task(
             "room_id": room_id
         })
 
-        # Cá nhân hóa System Instruction dựa trên Preference "Ký ức nhẹ" hoặc Phòng (Support)
-        personalized_system_prompt = LINKUP_SYSTEM_PROMPT
         if room_id == "help":
-            personalized_system_prompt = LINKUP_SUPPORT_PROMPT
+            ai_identity = "Hỗ trợ LinkUp"
+            personalized_system_prompt = (
+                "Bạn là nhân viên hỗ trợ khách hàng tại LinkUp Chat. "
+                "Nhiệm vụ của bạn là hướng dẫn người dùng sử dụng ứng dụng, giải đáp thắc mắc về tính năng. "
+                "Hãy trả lời với giọng điệu chuyên nghiệp, lịch sự và cực kỳ tận tâm. "
+                "Tránh trả lời các vấn đề không liên quan đến ứng dụng LinkUp."
+            )
+        else:
+            ai_identity = "LinkUp Assistant"
+            personalized_system_prompt = LINKUP_SYSTEM_PROMPT
 
         if user_prefs:
             memory_ctx = "\n=== AI USER MEMORY (KÝ ỨC NGƯỜI DÙNG) ===\n"
