@@ -2,9 +2,10 @@ from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from datetime import datetime, timezone
+import uuid
 
 from backend.app.db.session import get_db
-from backend.app.schemas.room import Room, RoomCreate
+from backend.app.schemas.room import Room, RoomCreate, GroupCreate
 from backend.app.api.deps import get_current_user
 
 router = APIRouter()
@@ -24,13 +25,19 @@ async def get_rooms(
     user_room_ids = [m["room_id"] for m in memberships]
 
     # Truy vấn các phòng Public, AI, Help hoặc các phòng user đã tham gia
+    # LinkUp Refinement: Admin không cần thấy phòng Help trong sidebar vì đã có Dashboard riêng
     query = {
         "$or": [
             {"type": "public"},
-            {"id": {"$in": ["ai", "help"]}},
+            {"id": "ai"},
             {"id": {"$in": user_room_ids}}
         ]
     }
+    
+    # Nếu không phải admin mới cho thấy phòng help
+    is_admin = current_user.get("is_superuser") or current_user.get("role") == "admin"
+    if not is_admin:
+        query["$or"].append({"id": "help"})
     
     rooms_list = await db["chat_rooms"].find(query).sort("updated_at", -1).to_list(length=100)
     
@@ -88,8 +95,20 @@ async def get_rooms(
                 if other_user:
                     other_name = other_user["username"]
                     other_avatar = other_user.get("avatar_url")
-                    # Ràng buộc: Chỉ hiển thị online nếu user đó cho phép và KHÔNG có quan hệ chặn
-                    is_online = other_user.get("is_online", False) and other_user.get("show_online_status", True)
+                    
+                    # Kiểm tra bạn bè: Chỉ hiện online nếu đã kết bạn
+                    is_friend = await db["friend_requests"].find_one({
+                        "status": "accepted",
+                        "$or": [
+                            {"from_id": current_user["id"], "to_id": other_user["id"]},
+                            {"from_id": other_user["id"], "to_id": current_user["id"]}
+                        ]
+                    })
+                    
+                    # Ràng buộc: Chỉ hiển thị online nếu là bạn bè và user đó cho phép và KHÔNG có quan hệ chặn
+                    is_online = False
+                    if is_friend:
+                        is_online = other_user.get("is_online", False) and other_user.get("show_online_status", True)
                     
                     if other_user["id"] in current_user.get("blocked_users", []):
                         is_online = False
@@ -150,6 +169,53 @@ async def create_room(
     await db["chat_rooms"].insert_one(db_obj)
     return db_obj
 
+@router.post("/group", response_model=Room)
+async def create_group_chat(
+    *,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    group_in: GroupCreate,
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    """
+    Tạo một nhóm chat mới với bạn bè.
+    """
+    if not group_in.name.strip():
+        raise HTTPException(status_code=400, detail="Tên nhóm không được để trống")
+        
+    room_id = f"group_{uuid.uuid4().hex[:8]}"
+    
+    # Check members
+    member_ids = list(set(group_in.member_ids + [current_user["id"]]))
+    if len(member_ids) < 3:
+        raise HTTPException(status_code=400, detail="Nhóm chat phải có ít nhất 3 thành viên")
+
+    db_obj = {
+        "id": room_id,
+        "name": group_in.name,
+        "type": "group",
+        "icon": "users",
+        "created_by": current_user["id"],
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc)
+    }
+    
+    await db["chat_rooms"].insert_one(db_obj)
+    
+    # Add members
+    members = [
+        {
+            "room_id": room_id,
+            "user_id": uid,
+            "joined_at": datetime.now(timezone.utc),
+            "role": "admin" if uid == current_user["id"] else "member"
+        }
+        for uid in member_ids
+    ]
+    await db["room_members"].insert_many(members)
+    
+    if "_id" in db_obj: db_obj.pop("_id")
+    return db_obj
+
 @router.post("/{room_id}/pin")
 async def toggle_pin_room(
     room_id: str,
@@ -180,3 +246,25 @@ async def toggle_pin_room(
         {"$set": {"is_pinned": new_status}}
     )
     return {"status": "success", "is_pinned": new_status}
+
+@router.delete("/{room_id}")
+async def delete_room_for_user(
+    room_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    """
+    Xóa phòng chat đối với người dùng nội bộ (rời phòng hoặc ẩn direct chat).
+    """
+    if room_id in ["ai", "help", "general"]:
+        raise HTTPException(status_code=400, detail="Không thể xóa các phòng hệ thống.")
+        
+    result = await db["room_members"].delete_one({
+        "room_id": room_id,
+        "user_id": current_user["id"]
+    })
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Bạn không tham gia phòng này.")
+        
+    return {"status": "success", "message": "Đã xóa đoạn chat khỏi danh sách"}

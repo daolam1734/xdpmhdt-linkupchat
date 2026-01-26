@@ -5,13 +5,16 @@ import {
     UserPlus, Clock,
     MoreHorizontal, Trash2,
     User, BellOff,
-    Pin, PinOff
+    Pin, PinOff,
+    LayoutDashboard,
+    Plus
 } from 'lucide-react';
 import type { Room } from '../../types/chat';
 import { Avatar } from '../common/Avatar';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { GroupCreateModal } from '../chat/GroupCreateModal';
 import { clsx } from 'clsx';
-import { searchUsers, startDirectChat, sendFriendRequest, acceptFriendRequest, rejectFriendRequest, getPendingRequests, getUserProfile } from '../../api/users';
+import { searchUsers, startDirectChat, sendFriendRequest, acceptFriendRequest, rejectFriendRequest, getPendingRequests, getUserProfile, getFriends } from '../../api/users';
 import type { UserSearchItem, FriendRequest } from '../../api/users';
 import { formatRelativeTime } from '../../utils/time';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -23,16 +26,26 @@ interface SidebarProps {
     activeRoomId?: string;
     onSelectRoom?: (room: Room) => void;
     onRoomCreated?: () => void;
+    onNavigateToAdmin?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectRoom, onRoomCreated }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ 
+    rooms, 
+    activeRoomId, 
+    onSelectRoom, 
+    onRoomCreated,
+    onNavigateToAdmin
+}) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<UserSearchItem[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
+    const [recentFriends, setRecentFriends] = useState<UserSearchItem[]>([]);
     const [deleteConfirmRoomId, setDeleteConfirmRoomId] = useState<string | null>(null);
+    const [isDeletingChat, setIsDeletingChat] = useState(false);
+    const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
     const { currentUser } = useAuthStore();
-    const { clearHistory, togglePin, activeDropdownId, setActiveDropdown, setViewingUser, viewingUser } = useChatStore();
+    const { clearHistory, togglePin, deleteRoom, activeDropdownId, setActiveDropdown, setViewingUser, viewingUser } = useChatStore();
 
     const menuRoomId = activeDropdownId?.startsWith('sidebar-room-') ? activeDropdownId.replace('sidebar-room-', '') : null;
 
@@ -42,6 +55,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
         window.addEventListener('click', handleClickOutside);
         return () => window.removeEventListener('click', handleClickOutside);
     }, [activeDropdownId, setActiveDropdown]);
+
+    useEffect(() => {
+        const fetchFriends = async () => {
+            try {
+                const friends = await getFriends();
+                // Sắp xếp theo created_at nếu có, hoặc chỉ lấy vài người mới nhất
+                setRecentFriends(friends.slice(0, 10));
+            } catch (error) {
+                console.error('Fetch friends error:', error);
+            }
+        };
+        fetchFriends();
+    }, [rooms]); // Refresh khi có room mới (kết bạn xong thường tạo room)
 
     useEffect(() => {
         const fetchPending = async () => {
@@ -107,9 +133,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
     const handleAcceptRequest = async (e: React.MouseEvent, requestId: string) => {
         e.stopPropagation();
         try {
-            await acceptFriendRequest(requestId);
+            const result = await acceptFriendRequest(requestId);
             setPendingRequests(prev => prev.filter(r => r.request_id !== requestId));
-            if (onRoomCreated) await onRoomCreated();
+            
+            if (onRoomCreated) {
+                await onRoomCreated(); // fetchRooms
+                
+                // Nếu backend trả về room_id, tự động mở đoạn chat đó
+                if (result.room_id) {
+                    const freshRooms = useChatStore.getState().rooms;
+                    const newRoom = freshRooms.find(r => r.id === result.room_id);
+                    if (newRoom) {
+                        onSelectRoom?.(newRoom);
+                    }
+                }
+            }
+            
             toast.success("Đã chấp nhận kết bạn!");
         } catch (error) {
             console.error('Accept error:', error);
@@ -127,12 +166,47 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
         }
     };
 
+    const handleDeleteChat = async (roomId: string) => {
+        try {
+            await deleteRoom(roomId);
+            toast.success('Đã xóa đoạn chat');
+            setDeleteConfirmRoomId(null);
+            setIsDeletingChat(false);
+        } catch (error: any) {
+            toast.error(error.response?.data?.detail || 'Lỗi khi xóa đoạn chat');
+        }
+    };
+
     return (
         <aside className="flex w-80 md:w-90 bg-white border-r border-gray-100 flex-col z-20 h-screen shrink-0 overflow-hidden shadow-sm">
             {/* Nav Rail + Header (Slightly combined) */}
             <div className="px-4 pt-4 pb-2">
                 <div className="flex items-center justify-between mb-3 px-1">
                     <h1 className="text-2xl font-bold text-black tracking-tight cursor-pointer" onClick={() => setViewingUser(currentUser as any)}>Đoạn chat</h1>
+                    
+                    <div className="flex items-center space-x-2">
+                        <button 
+                            onClick={() => setIsGroupModalOpen(true)}
+                            className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-all group relative"
+                            title="Tạo nhóm mới"
+                        >
+                            <Plus size={20} />
+                        </button>
+
+                        {(currentUser?.role === 'admin' || currentUser?.is_superuser) && (
+                            <button 
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onNavigateToAdmin?.();
+                                }}
+                                className="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-all group relative"
+                                title="Quản trị hệ thống"
+                            >
+                                <LayoutDashboard size={20} />
+                                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-indigo-500 rounded-full border-2 border-white animate-pulse"></span>
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* Search Bar - Messenger Style */}
@@ -261,18 +335,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                             </div>
                         )}
 
-                        {/* Stories / Active People (Horizontal Scroll) */}
-                        <div className="flex overflow-x-auto px-1 py-3 space-x-4 no-scrollbar mb-1">
-                            {/* Hiển thị những người đang online từ danh sách chat direct */}
-                            {rooms.filter(r => r.type === 'direct' && r.is_online).slice(0, 10).map((room) => (
-                                <div key={room.id} className="flex flex-col items-center space-y-1 flex-shrink-0 cursor-pointer" onClick={() => onSelectRoom?.(room)}>
-                                    <div className="relative">
-                                        <Avatar name={room.name} url={room.avatar_url} isOnline={room.is_online} size="lg" />
-                                    </div>
-                                    <span className="text-[11px] font-medium text-gray-500 truncate w-14 text-center">{room.name.split(' ')[0]}</span>
+                        {/* Recently Added Friends (Horizontal Scroll) */}
+                        {recentFriends.length > 0 && (
+                            <div className="mb-2">
+                                <h3 className="text-[11px] font-bold text-gray-400 mb-2 px-3 uppercase tracking-[0.15em]">Bạn bè mới</h3>
+                                <div className="flex overflow-x-auto px-1 pb-2 space-x-4 no-scrollbar">
+                                    {recentFriends.map((friend) => (
+                                        <div 
+                                            key={friend.id} 
+                                            className="flex flex-col items-center space-y-1.5 flex-shrink-0 cursor-pointer group" 
+                                            onClick={() => handleStartDirectChat(friend.id)}
+                                        >
+                                            <div className="relative transform transition-transform group-hover:scale-110 active:scale-95">
+                                                <Avatar name={friend.username} url={friend.avatar_url} isOnline={friend.is_online} size="lg" />
+                                            </div>
+                                            <span className="text-[11px] font-bold text-gray-600 truncate w-16 text-center group-hover:text-blue-600 transition-colors">{friend.username.split(' ')[0]}</span>
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
-                        </div>
+                            </div>
+                        )}
 
                         {/* Special AI Room section if exists */}
                         {rooms.filter(r => r.id === 'ai').map((room) => (
@@ -471,11 +553,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                                                     e.stopPropagation();
                                                     setActiveDropdown(null);
                                                     setDeleteConfirmRoomId(room.id);
+                                                    setIsDeletingChat(false);
                                                 }}
                                                 className="w-full flex items-center px-4 py-2.5 text-[14px] text-red-600 hover:bg-red-50 transition-colors"
                                             >
                                                 <Trash2 size={16} className="mr-3 text-red-400" />
                                                 Xóa lịch sử trò chuyện
+                                            </button>
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setActiveDropdown(null);
+                                                    setDeleteConfirmRoomId(room.id);
+                                                    setIsDeletingChat(true);
+                                                }}
+                                                className="w-full flex items-center px-4 py-2.5 text-[14px] text-red-600 font-bold hover:bg-red-50 transition-colors"
+                                            >
+                                                <X size={16} className="mr-3 text-red-400" />
+                                                Xóa đoạn chat
                                             </button>
                                         </div>
                                     )}
@@ -486,14 +581,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                 )}
             </div>
 
-            {/* Delete History Confirm Modal */}
+            {/* Delete History/Chat Confirm Modal */}
             <ConfirmModal
                 isOpen={!!deleteConfirmRoomId}
-                onCancel={() => setDeleteConfirmRoomId(null)}
-                onConfirm={() => deleteConfirmRoomId && handleDeleteHistory(deleteConfirmRoomId)}
-                title="Xóa lịch sử trò chuyện"
-                message="Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện? Hành động này không thể hoàn tác và tin nhắn sẽ bị ẩn khỏi phía bạn."
-                confirmText="Xác nhận xóa"
+                onCancel={() => {
+                    setDeleteConfirmRoomId(null);
+                    setIsDeletingChat(false);
+                }}
+                onConfirm={() => {
+                    if (deleteConfirmRoomId) {
+                        if (isDeletingChat) {
+                            handleDeleteChat(deleteConfirmRoomId);
+                        } else {
+                            handleDeleteHistory(deleteConfirmRoomId);
+                        }
+                    }
+                }}
+                title={isDeletingChat ? "Xóa đoạn chat" : "Xóa lịch sử trò chuyện"}
+                message={isDeletingChat 
+                    ? "Bạn có chắc chắn muốn xóa đoạn chat này khỏi danh sách? Bạn vẫn có thể tìm lại người dùng này để nhắn tin sau." 
+                    : "Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện? Hành động này không thể hoàn tác và tin nhắn sẽ bị ẩn khỏi phía bạn."
+                }
+                confirmText={isDeletingChat ? "Xóa đoạn chat" : "Xác nhận xóa"}
                 type="danger"
             />
 
@@ -511,6 +620,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ rooms, activeRoomId, onSelectR
                     <span className="text-[10px] font-medium mt-1">Cá nhân</span>
                 </div>
             </div>
+
+            <GroupCreateModal 
+                isOpen={isGroupModalOpen}
+                onClose={() => setIsGroupModalOpen(false)}
+                onSuccess={(room) => {
+                    if (onRoomCreated) onRoomCreated();
+                    onSelectRoom?.(room);
+                }}
+            />
         </aside>
     );
 };
