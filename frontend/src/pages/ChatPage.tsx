@@ -88,6 +88,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
         activeRoomId={activeRoom?.id || ''} 
         onSelectRoom={setActiveRoom}
         onRoomCreated={fetchRooms}
+        onNavigateToAdmin={onNavigateToAdmin}
       />
 
       {/* Main Chat Area / Profile Area */}
@@ -222,19 +223,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                       </button>
 
                       <div className="h-[1px] bg-gray-100 my-1 mx-2" />
-
-                      {currentUser?.is_superuser && (
-                          <button 
-                              onClick={() => {
-                                  onNavigateToAdmin?.();
-                                  setActiveDropdown(null);
-                              }}
-                              className="w-full flex items-center space-x-3 px-4 py-2.5 hover:bg-indigo-50 text-[14px] text-indigo-600 font-semibold transition-colors"
-                          >
-                              <LayoutDashboard size={18} />
-                              <span>Trang quản trị hệ thống</span>
-                          </button>
-                      )}
 
                       <button 
                           onClick={() => {

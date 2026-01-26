@@ -29,8 +29,10 @@ Write-Host "[*] Đang cập nhật thư viện..." -ForegroundColor Green
 
 # 4. Chạy Backend
 Write-Host "----------------------------"
-Write-Host "[SUCCESS] Đang khởi động Backend server tại http://localhost:8000" -ForegroundColor Green
-Write-Host "[INFO] Tài liệu API: http://localhost:8000/docs" -ForegroundColor Cyan
+Write-Host "[SUCCESS] LinkUp Backend đang khởi động!" -ForegroundColor Green
+Write-Host "[INFO] API URL: http://localhost:8000" -ForegroundColor Cyan
+Write-Host "[INFO] Docs: http://localhost:8000/docs" -ForegroundColor Cyan
+Write-Host "[INFO] Dashboard Admin: Đăng nhập với quyền Admin để xem tab 'Hỗ trợ khách hàng'" -ForegroundColor Yellow
 Write-Host "----------------------------"
 
 & "backend\.venv\Scripts\python.exe" -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000

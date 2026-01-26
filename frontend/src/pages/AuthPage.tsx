@@ -10,6 +10,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onBack }) => {
     const [isLogin, setIsLogin] = useState(true);
     const [showPassword, setShowPassword] = useState(false);
     const [username, setUsername] = useState('');
+    const [email, setEmail] = useState('');
+    const [fullName, setFullName] = useState('');
     const [password, setPassword] = useState('');
     const [localError, setLocalError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
@@ -27,7 +29,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onBack }) => {
             if (isLogin) {
                 await login(username, password);
             } else {
-                await signup(username, password);
+                await signup({ 
+                    username, 
+                    password, 
+                    email: email || undefined, 
+                    full_name: fullName || undefined 
+                });
                 setSuccessMsg('Đăng ký thành công! Đang đăng nhập...');
                 setTimeout(async () => {
                     await login(username, password);
@@ -92,10 +99,33 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onBack }) => {
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
                                 className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#0084FF] focus:ring-4 focus:ring-blue-100 transition-all font-medium text-gray-800 placeholder:text-gray-400"
-                                placeholder="Tên người dùng hoặc email"
+                                placeholder="Tên đăng nhập"
                                 required
                             />
                         </div>
+
+                        {!isLogin && (
+                            <>
+                                <div className="relative group">
+                                    <input 
+                                        type="text" 
+                                        value={fullName}
+                                        onChange={(e) => setFullName(e.target.value)}
+                                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#0084FF] focus:ring-4 focus:ring-blue-100 transition-all font-medium text-gray-800 placeholder:text-gray-400"
+                                        placeholder="Họ và tên"
+                                    />
+                                </div>
+                                <div className="relative group">
+                                    <input 
+                                        type="email" 
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#0084FF] focus:ring-4 focus:ring-blue-100 transition-all font-medium text-gray-800 placeholder:text-gray-400"
+                                        placeholder="Địa chỉ Email"
+                                    />
+                                </div>
+                            </>
+                        )}
                         
                         <div className="relative group">
                             <input 

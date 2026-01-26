@@ -6,8 +6,14 @@ import certifi
 ca = certifi.where()
 
 # Added timeout and explicit TLS settings to help debug the SSL handshake error
+mongodb_url = settings.MONGODB_URL
+if not mongodb_url or "<username>" in mongodb_url:
+    print("⚠️ CẢNH BÁO: MONGODB_URL chưa được cấu hình chính xác trong file .env")
+    # Gán một string hợp lệ giả để tránh crash ngay lập tức khi khởi tạo client (nhưng vẫn sẽ fail khi query)
+    mongodb_url = "mongodb://localhost:27017/placeholder"
+
 client = AsyncIOMotorClient(
-    settings.MONGODB_URL,
+    mongodb_url,
     tlsCAFile=ca,
     serverSelectionTimeoutMS=5000,
     connectTimeoutMS=10000,

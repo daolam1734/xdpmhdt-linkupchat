@@ -12,6 +12,8 @@ export interface User {
   request_sent?: boolean;
   allow_stranger_messages?: boolean;
   is_superuser?: boolean;
+  role?: string;
+  permissions?: string[];
   message_count?: number;
   friend_count?: number;
   blocked_users?: string[];

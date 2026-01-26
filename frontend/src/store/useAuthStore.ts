@@ -11,7 +11,12 @@ interface AuthState {
     error: string | null;
 
     login: (username: string, password: string) => Promise<void>;
-    signup: (username: string, password: string) => Promise<void>;
+    signup: (data: { 
+        username: string; 
+        password: string;
+        email?: string;
+        full_name?: string;
+    }) => Promise<void>;
     logout: () => void;
     fetchCurrentUser: () => Promise<void>;
     blockUser: (userId: string) => Promise<void>;
@@ -20,6 +25,9 @@ interface AuthState {
         username?: string; 
         avatar_url?: string; 
         bio?: string; 
+        email?: string;
+        full_name?: string;
+        phone?: string;
         allow_stranger_messages?: boolean;
         ai_preferences?: {
             preferred_style?: 'short' | 'balanced' | 'detailed';
@@ -76,10 +84,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
     },
 
-    signup: async (username, password) => {
+    signup: async (data) => {
         set({ isLoading: true, error: null });
         try {
-            await authService.signup({ username, password });
+            await authService.signup(data);
         } catch (error: any) {
             const msg = error.response?.data?.detail || 'Đăng ký thất bại';
             set({ error: msg });

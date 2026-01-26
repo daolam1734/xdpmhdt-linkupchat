@@ -13,4 +13,5 @@ export const chatService = {
         params: { query, room_id: roomId }
     }),
     togglePin: (roomId: string) => api.post(`/rooms/${roomId}/pin`),
+    deleteRoom: (roomId: string) => api.delete(`/rooms/${roomId}`),
 };

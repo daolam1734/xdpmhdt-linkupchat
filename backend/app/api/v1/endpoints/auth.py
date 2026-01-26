@@ -26,6 +26,12 @@ async def login(
             detail="Incorrect username or password",
         )
     
+    if not user.get("is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tài khoản này đã bị vô hiệu hóa bởi quản trị viên."
+        )
+    
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return {
         "access_token": security.create_access_token(
@@ -71,6 +77,12 @@ async def read_users_me(
     if "allow_stranger_messages" not in current_user:
         current_user["allow_stranger_messages"] = True
     
+    # Đảm bảo role và permissions luôn có (LinkUp RBAC)
+    if "role" not in current_user:
+        current_user["role"] = "admin" if current_user.get("is_superuser") else "member"
+    if "permissions" not in current_user:
+        current_user["permissions"] = ["all"] if current_user["role"] == "admin" else []
+
     # Lấy danh sách những người đã chặn tôi
     blocked_by_query = await db["users"].find({"blocked_users": current_user["id"]}).to_list(length=1000)
     current_user["blocked_by"] = [u["id"] for u in blocked_by_query]
@@ -173,12 +185,17 @@ async def signup(
     db_obj = {
         "id": str(uuid.uuid4()),
         "username": user_in.username,
+        "email": user_in.email,
+        "full_name": user_in.full_name,
         "hashed_password": security.get_password_hash(user_in.password),
         "avatar_url": None,
         "bio": None,
+        "phone": None,
         "allow_stranger_messages": True,
         "is_active": True,
         "is_superuser": False,
+        "role": "member",  # LinkUp: User + Role + Permission
+        "permissions": [],
         "created_at": datetime.now(timezone.utc)
     }
     await db["users"].insert_one(db_obj)
