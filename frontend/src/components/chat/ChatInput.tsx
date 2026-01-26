@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 
 interface ChatInputProps {
-  onSendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }) => void;
+  onSendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }, receiverId?: string) => void;
   isLoading?: boolean;
 }
 
@@ -16,10 +16,22 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
   const [showAiSettings, setShowAiSettings] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { replyingTo, setReplyingTo, editingMessage, setEditingMessage, editMessage, uploadFile, activeRoom } = useChatStore();
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const { 
+    replyingTo, 
+    setReplyingTo, 
+    editingMessage, 
+    setEditingMessage, 
+    editMessage, 
+    uploadFile, 
+    activeRoom,
+    sendTypingStatus
+  } = useChatStore();
   const { currentUser, updateProfile, unblockUser: unblockUserStore } = useAuthStore();
 
   const isAiRoom = activeRoom?.type === 'ai' || activeRoom?.id === 'ai' || activeRoom?.id === 'help';
+  const isGeneralRoom = activeRoom?.id === 'general';
   
   // Real-time block detection using both activeRoom state and currentUser block lists
   const isBlockedByMe = activeRoom?.type === 'direct' && activeRoom.other_user_id && 
@@ -67,6 +79,22 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
     }
   };
 
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setText(e.target.value);
+    
+    // Typing notification logic
+    if (!typingTimeoutRef.current) {
+        sendTypingStatus(true);
+    } else {
+        clearTimeout(typingTimeoutRef.current);
+    }
+    
+    typingTimeoutRef.current = setTimeout(() => {
+        sendTypingStatus(false);
+        typingTimeoutRef.current = null;
+    }, 3000);
+  };
+
   const handleSend = () => {
     if (isBlocked) {
         toast.error("Bạn không thể thực hiện hành động này");
@@ -87,11 +115,20 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
       const currentUser = useAuthStore.getState().currentUser;
       const { activeRoom, replyingTo } = useChatStore.getState();
       
-      if (activeRoom?.id === 'help' && currentUser?.is_superuser && replyingTo) {
-          // Khi admin reply một tin nhắn trong Help room, ta lấy sender_id của người hỏi làm người nhận
-          // Nếu người hỏi là AI (isBot=true), ta tìm xem có context nào khác không (thông thường admin reply user)
-          if (!replyingTo.isBot) {
-              receiverId = replyingTo.senderId;
+      if (activeRoom?.id === 'help' && (currentUser?.is_superuser || currentUser?.role === 'admin')) {
+          if (replyingTo) {
+                // Ưu tiên senderId nếu không phải bot, ngược lại lấy receiver_id của bot
+                receiverId = !replyingTo.isBot ? replyingTo.senderId : replyingTo.receiver_id;
+          } else {
+                // Tự động tìm người dùng cuối cùng gửi tin nhắn trong phòng này để phản hồi (trường hợp admin không click trả lời)
+                const messages = useChatStore.getState().messages;
+                const lastUserMsg = [...messages].reverse().find(m => !m.isBot && m.senderId !== currentUser?.id);
+                if (lastUserMsg) {
+                    receiverId = lastUserMsg.senderId;
+                } else {
+                    toast.error("Vui lòng 'Trả lời' một tin nhắn cụ thể để phản hồi cho người dùng.");
+                    return;
+                }
           }
       }
 
@@ -178,12 +215,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
             </div>
         ) : (
             <>
-                {/* AI Modes (Meta Style) - Available in all rooms */}
-                <div className={clsx(
-                    "flex flex-col border-b border-gray-50",
-                    isAiRoom ? "bg-purple-50/30" : "bg-gray-50/20"
-                )}>
-            <div className="flex items-center space-x-2 px-4 py-2 overflow-x-auto no-scrollbar scroll-smooth">
+                {/* AI Modes (Meta Style) - Available in all rooms EXCEPT General */}
+                {!isGeneralRoom && (
+                    <div className={clsx(
+                        "flex flex-col border-b border-gray-50",
+                        isAiRoom ? "bg-purple-50/30" : "bg-gray-50/20"
+                    )}>
+                <div className="flex items-center space-x-2 px-4 py-2 overflow-x-auto no-scrollbar scroll-smooth">
                 {isAiRoom && (
                     <>
                         <button
@@ -304,6 +342,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
                     </div>
                 )}
             </div>
+            )}
 
         {/* Reply/Edit Bar */}
         {(replyingTo || editingMessage) && (
@@ -314,7 +353,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
                     </div>
                     <div className="flex flex-col overflow-hidden">
                         <span className="text-[12px] font-semibold text-gray-700">
-                            {replyingTo ? `Đang trả lời ${replyingTo.senderName}` : "Đang sửa tin nhắn"}
+                            {replyingTo ? (
+                                (activeRoom?.id === 'help' && (currentUser?.is_superuser || currentUser?.role === 'admin'))
+                                ? `Hỗ trợ khách hàng: ${(!replyingTo.isBot ? replyingTo.senderName : 'Người dùng đang chờ')}`
+                                : `Đang trả lời ${replyingTo.senderName}`
+                            ) : "Đang sửa tin nhắn"}
                         </span>
                         <span className="text-[11px] text-gray-500 truncate">
                             {replyingTo ? replyingTo.content : editingMessage?.content}
@@ -353,7 +396,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
             <textarea
                 ref={textareaRef}
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={handleTextChange}
                 onKeyDown={handleKeyDown}
                 placeholder="Aa"
                 className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 resize-none max-h-40 font-normal text-black text-[15px] py-2 placeholder:text-gray-500"

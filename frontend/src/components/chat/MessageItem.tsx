@@ -153,7 +153,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             >
                 <Avatar 
                     name={message.senderName} 
-                    url={message.isBot ? undefined : (message as any).senderAvatar} 
+                    url={message.isBot ? undefined : message.senderAvatar} 
                     size="sm" 
                 />
             </div>

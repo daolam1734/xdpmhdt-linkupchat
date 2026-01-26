@@ -52,6 +52,22 @@ async def get_current_active_superuser(
         )
     return current_user
 
+async def get_current_user_ws(token: str) -> dict:
+    """
+    Xác thực người dùng cho kết nối WebSocket từ token.
+    """
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            return None
+            
+        from backend.app.db.session import db
+        user = await db["users"].find_one({"id": user_id})
+        return user if user and user.get("is_active", True) else None
+    except:
+        return None
+
 def check_permissions(required_permissions: List[str]):
     async def permission_checker(current_user: dict = Depends(get_current_user)):
         user_perms = current_user.get("permissions", [])

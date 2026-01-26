@@ -13,6 +13,7 @@ class MessageRead(MessageBase):
     id: str
     sender_id: Optional[str] = None
     sender_name: Optional[str] = None
+    sender_avatar: Optional[str] = None
     receiver_id: Optional[str] = None  # Dùng cho các phòng biệt lập (AI, Help)
     timestamp: datetime
     is_bot: bool
@@ -24,6 +25,7 @@ class MessageRead(MessageBase):
     reply_to_content: Optional[str] = None
     suggestions: Optional[list[str]] = None
     shared_post: Optional[dict] = None
+    reactions: Optional[dict[str, list[str]]] = None
 
     class Config:
         from_attributes = True

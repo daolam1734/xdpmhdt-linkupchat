@@ -6,7 +6,7 @@ import { ChatInput } from '../components/chat/ChatInput';
 import { Sidebar } from '../components/layout/Sidebar';
 import { ProfileView } from '../components/chat/ProfileView';
 import { Avatar } from '../components/common/Avatar';
-import { Info, LogOut, Pin, Search, Trash2, BellOff, Flag, X, LayoutDashboard, MessageCircle } from 'lucide-react';
+import { Info, LogOut, Pin, Search, Trash2, BellOff, Flag, X, MessageCircle } from 'lucide-react';
 import { formatChatTime } from '../utils/time';
 import toast from 'react-hot-toast';
 import { ConfirmModal } from '../components/common/ConfirmModal';
@@ -19,7 +19,6 @@ interface ChatPageProps {
 export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
   const { 
     messages, 
-    isConnected, 
     rooms,
     activeRoom,
     setActiveRoom,
@@ -40,11 +39,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
     setSearchQuery,
     isViewingPinned,
     setViewingPinned,
-    isAiTyping,
+    aiTypingRooms,
     activeDropdownId,
     setActiveDropdown,
     viewingUser,
-    setViewingUser
+    setViewingUser,
+    typingUsers
   } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
@@ -269,10 +269,33 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
         <main ref={mainRef} className="flex-1 overflow-y-auto px-4">
           <div className="max-w-4xl mx-auto flex flex-col min-h-full pt-10 pb-4">
             {messages.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in duration-500">
-                <Avatar name={activeRoom?.name || '?'} size="lg" />
-                <h3 className="text-xl font-bold text-black mt-4">{activeRoom?.name}</h3>
-                <p className="text-gray-500 text-sm mt-1">Các yêu cầu và tin nhắn mới sẽ xuất hiện ở đây.</p>
+              <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in duration-500 max-w-sm mx-auto text-center">
+                <div className="mb-6 relative">
+                  <Avatar name={activeRoom?.name || '?'} size="xl" />
+                  <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-white rounded-full flex items-center justify-center shadow-sm">
+                    <div className="w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
+                  </div>
+                </div>
+                <h3 className="text-xl font-bold text-black">{activeRoom?.name}</h3>
+                <p className="text-gray-500 text-[14px] mt-2 leading-relaxed">
+                  {activeRoom?.id === 'ai' 
+                    ? "Chào bạn! Tôi là LinkUp AI. Hôm nay tôi có thể giúp gì cho bạn không? Hãy hỏi tôi về tính năng hoặc bất cứ điều gì!"
+                    : activeRoom?.id === 'help'
+                    ? (currentUser?.role === 'admin' || currentUser?.is_superuser
+                        ? "Hệ thống tiếp nhận yêu cầu hỗ trợ. Tại đây bạn có thể phản hồi các thắc mắc của người dùng đang cần trợ giúp."
+                        : "Chào mừng bạn đến với Hỗ trợ khách hàng. Hãy để lại tin nhắn về vấn đề bạn gặp phải, đội ngũ hỗ trợ sẽ xử lý sớm nhất.")
+                    : activeRoom?.id === 'general'
+                    ? "Chào mừng mọi người đến với phòng thảo luận chung! Hãy là người đầu tiên khơi dậy cuộc trò chuyện sôi nổi tại đây."
+                    : activeRoom?.type === 'public' || activeRoom?.type === 'private'
+                    ? `Chào mừng bạn đến với nhóm ${activeRoom?.name}! Hãy gửi tin nhắn đầu tiên để làm quen với các thành viên khác nhé.`
+                    : `Hãy gửi một lời chào để bắt đầu kết nối với ${activeRoom?.name || 'mọi người'}!`}
+                </p>
+                <button 
+                  onClick={() => document.querySelector('textarea')?.focus()}
+                  className="mt-6 px-6 py-2 bg-blue-600 text-white rounded-full font-bold text-[14px] hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-200"
+                >
+                  Bắt đầu trò chuyện
+                </button>
               </div>
             ) : (
                 <div className="space-y-0.5">
@@ -305,7 +328,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
             )}
             
             {/* AI Typing Indicator */}
-            {isAiTyping && !messages.some(m => m.isBot && m.isStreaming) && (
+            {activeRoom && aiTypingRooms[activeRoom.id] && !messages.some(m => m.isBot && m.isStreaming) && (
                 <div className="flex items-end space-x-2 mb-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                     <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 flex items-center justify-center text-[10px] text-white font-bold shadow-sm shrink-0">
                         AI
@@ -314,6 +337,22 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                         <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-duration:0.8s]" />
                         <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.2s]" />
                         <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.4s]" />
+                    </div>
+                </div>
+            )}
+
+            {/* Human Typing Indicator */}
+            {activeRoom && typingUsers[activeRoom.id] && Object.keys(typingUsers[activeRoom.id]).length > 0 && (
+                <div className="flex items-center space-x-2 mb-4 animate-in fade-in slide-in-from-bottom-2 duration-300 ml-9">
+                    <div className="bg-[#F0F2F5] px-3 py-1.5 rounded-2xl shadow-sm flex items-center space-x-2">
+                        <div className="flex space-x-1">
+                            <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce [animation-duration:0.8s]" />
+                            <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.2s]" />
+                            <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.4s]" />
+                        </div>
+                        <span className="text-[12px] text-gray-500 font-medium italic">
+                            {Object.values(typingUsers[activeRoom.id])[0]}{Object.keys(typingUsers[activeRoom.id]).length > 1 ? ` và ${Object.keys(typingUsers[activeRoom.id]).length - 1} người khác` : ''} đang soạn tin...
+                        </span>
                     </div>
                 </div>
             )}
@@ -424,7 +463,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
 
         {/* Chat Input */}
         <div className="px-4 pb-4">
-            {aiSuggestion && (
+            {activeRoom?.id !== 'general' && aiSuggestion && (
                 <div className="mb-2 p-3 bg-purple-50 border border-purple-100 rounded-xl animate-in slide-in-from-bottom-2 fade-in duration-300">
                     <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center space-x-2">

@@ -24,20 +24,16 @@ async def get_rooms(
     memberships = await db["room_members"].find({"user_id": current_user["id"]}).to_list(length=1000)
     user_room_ids = [m["room_id"] for m in memberships]
 
-    # Truy vấn các phòng Public, AI, Help hoặc các phòng user đã tham gia
-    # LinkUp Refinement: Admin không cần thấy phòng Help trong sidebar vì đã có Dashboard riêng
+    # LinkUp Refinement: Cho phép Admin thấy phòng Help để hỗ trợ khách hàng
+    is_admin = current_user.get("is_superuser") or current_user.get("role") == "admin"
     query = {
         "$or": [
             {"type": "public"},
             {"id": "ai"},
+            {"id": "help"}, # Mọi người đều thấy phòng Help
             {"id": {"$in": user_room_ids}}
         ]
     }
-    
-    # Nếu không phải admin mới cho thấy phòng help
-    is_admin = current_user.get("is_superuser") or current_user.get("role") == "admin"
-    if not is_admin:
-        query["$or"].append({"id": "help"})
     
     rooms_list = await db["chat_rooms"].find(query).sort("updated_at", -1).to_list(length=100)
     
@@ -58,11 +54,33 @@ async def get_rooms(
         }
         
         # Isolation logic cho phòng đặc biệt (AI, Help)
-        if room["id"] in ["ai", "help"]:
+        if room["id"] == "ai":
             msg_query["$or"] = [
                 {"sender_id": current_user["id"]},
                 {"receiver_id": current_user["id"]}
             ]
+        elif room["id"] == "help":
+            # Nếu không phải admin, chỉ thấy thread của chính mình
+            if not is_admin:
+                msg_query["$or"] = [
+                    {"sender_id": current_user["id"]},
+                    {"receiver_id": current_user["id"]}
+                ]
+            else:
+                # Nếu là admin, đổi tên phòng để phân biệt
+                room["name"] = "Hỗ trợ khách hàng (Admin)"
+                # msg_query giữ nguyên để admin thấy mọi tin nhắn
+                
+                # Tính toán unread_count cho admin: Tin nhắn từ User/Bot chưa được Admin phản hồi
+                # Logic đơn giản: Nếu tin nhắn cuối cùng không phải của một admin
+                last_msg_check = await db["messages"].find({"room_id": "help"}).sort("timestamp", -1).limit(1).to_list(1)
+                if last_msg_check:
+                    last_sender_id = last_msg_check[0].get("sender_id")
+                    last_sender = await db["users"].find_one({"id": last_sender_id})
+                    is_last_sender_admin = last_sender and (last_sender.get("is_superuser") or last_sender.get("role") == "admin")
+                    if not is_last_sender_admin:
+                        room["has_unread"] = True
+                        room["unread_count"] = 1 # Simplified indicator
 
         last_msg = await db["messages"].find(msg_query).sort("timestamp", -1).limit(1).to_list(length=1)
         
@@ -213,6 +231,22 @@ async def create_group_chat(
     ]
     await db["room_members"].insert_many(members)
     
+    # Broadcast to members to update their sidebar
+    try:
+        from .ws.manager import manager
+        await manager.broadcast_to_room(room_id, {
+            "type": "new_room",
+            "room": {
+                "id": room_id,
+                "name": group_in.name,
+                "type": "group",
+                "icon": "users",
+                "updated_at": db_obj["updated_at"].isoformat()
+            }
+        })
+    except Exception as e:
+        print(f"Error broadcasting new group: {e}")
+
     if "_id" in db_obj: db_obj.pop("_id")
     return db_obj
 

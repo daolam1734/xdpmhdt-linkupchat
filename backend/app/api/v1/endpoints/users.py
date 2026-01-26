@@ -434,6 +434,24 @@ async def start_direct_chat(
         ]
         await db["room_members"].insert_many(members)
         
+        # Thông báo cho đối phương qua WebSocket để cập nhật Sidebar realtime
+        try:
+            from .ws.manager import manager
+            await manager.send_to_user(user_id, {
+                "type": "new_room",
+                "room": {
+                    "id": room_id,
+                    "name": current_user["username"],
+                    "type": "direct",
+                    "other_user_id": current_user["id"],
+                    "avatar_url": current_user.get("avatar_url") or current_user.get("avatar"),
+                    "updated_at": new_room["updated_at"].isoformat(),
+                    "is_online": current_user.get("is_online", False)
+                }
+            })
+        except:
+            pass
+
         if "_id" in new_room:
             new_room.pop("_id")
         return new_room

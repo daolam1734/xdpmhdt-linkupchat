@@ -18,3 +18,15 @@ async def get_system_api_key(db: AsyncIOMotorDatabase, provider: str = "google")
         return config.get("openai_api_key") or getattr(settings, "OPENAI_API_KEY", "")
     
     return ""
+
+async def get_system_config(db: AsyncIOMotorDatabase) -> dict:
+    """
+    Lấy toàn bộ cấu hình hệ thống.
+    """
+    config = await db["system_configs"].find_one({"type": "api_keys"})
+    if not config:
+        return {
+            "ai_auto_reply": True,
+            "ai_system_prompt": "Bạn là LinkUp AI Assistant, một trợ lý ảo thông minh."
+        }
+    return config

@@ -44,6 +44,8 @@ export interface Room {
   last_message_at?: string;
   updated_at?: string;
   blocked_by_other?: boolean;
+  has_unread?: boolean;
+  unread_count?: number;
 }
 
 export interface Message {
@@ -51,6 +53,7 @@ export interface Message {
   roomId?: string; // Room identifying the message context
   senderId: string;
   senderName: string;
+  senderAvatar?: string;
   receiver_id?: string;
   content: string;
   file_url?: string;

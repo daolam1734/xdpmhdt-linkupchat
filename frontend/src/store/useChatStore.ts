@@ -19,7 +19,8 @@ interface ChatState {
     searchResults: Message[];
     searchQuery: string;
     isViewingPinned: boolean;
-    isAiTyping: boolean;
+    aiTypingRooms: Record<string, boolean>; // room_id: boolean
+    typingUsers: Record<string, Record<string, string>>; // room_id: { user_id: username }
     activeDropdownId: string | null; // ID of the currently open dropdown
     viewingUser: User | null; // Profile view state
 
@@ -49,6 +50,7 @@ interface ChatState {
     setViewingPinned: (val: boolean) => void;
     dismissSuggestions: (messageId: string) => void;
     setActiveDropdown: (id: string | null) => void;
+    sendTypingStatus: (status: boolean) => void;
 }
 
 const RECONNECT_INTERVALS = [1000, 2000, 5000, 10000];
@@ -82,18 +84,18 @@ export const useChatStore = create<ChatState>()(
         searchResults: [],
         searchQuery: '',
         isViewingPinned: false,
-        isAiTyping: false,
+        aiTypingRooms: {},
+        typingUsers: {},
         activeDropdownId: null,
         viewingUser: null,
 
-        fetchRooms: async () => {
-            set({ isLoading: true });
+        fetchRooms: async (silent = false) => {
+            if (!silent) set({ isLoading: true });
             try {
                 const response = await chatService.getRooms();
                 const sortedRooms = response.data.sort((a: any, b: any) => {
                     if (a.is_pinned && !b.is_pinned) return -1;
                     if (!a.is_pinned && b.is_pinned) return 1;
-                    // Nếu cùng trạng thái ghim, sắp xếp theo thời gian cập nhật
                     const timeA = new Date(a.updated_at || 0).getTime();
                     const timeB = new Date(b.updated_at || 0).getTime();
                     return timeB - timeA;
@@ -101,7 +103,6 @@ export const useChatStore = create<ChatState>()(
                 
                 set({ rooms: sortedRooms });
                 
-                // Cập nhật activeRoom nếu nó đang tồn tại (từ persist) để đồng bộ dữ liệu mới nhất
                 const currentActive = get().activeRoom;
                 if (currentActive) {
                     const freshRoom = sortedRooms.find((r: any) => r.id === currentActive.id);
@@ -110,13 +111,13 @@ export const useChatStore = create<ChatState>()(
                     }
                 }
 
-                if (sortedRooms.length > 0 && !get().activeRoom && !get().viewingUser) {
+                if (sortedRooms.length > 0 && !get().activeRoom && !get().viewingUser && !silent) {
                     get().setActiveRoom(sortedRooms[0]);
                 }
             } catch (error) {
                 console.error('Fetch rooms failed:', error);
             } finally {
-                set({ isLoading: false });
+                if (!silent) set({ isLoading: false });
             }
         },
 
@@ -125,7 +126,14 @@ export const useChatStore = create<ChatState>()(
                 set({ activeRoom: null, messages: [] });
                 return;
             }
-            set({ activeRoom: room, messages: [], isLoading: true, viewingUser: null });
+            // Xóa trạng thái chưa đọc khi vào phòng
+            set(state => ({
+                activeRoom: room,
+                messages: [],
+                isLoading: true,
+                viewingUser: null,
+                rooms: state.rooms.map(r => r.id === room.id ? { ...r, has_unread: false, unread_count: 0 } : r)
+            }));
             get().sendReadReceipt(room.id);
             try {
                 const response = await chatService.getMessages(room.id);
@@ -133,6 +141,7 @@ export const useChatStore = create<ChatState>()(
                     id: m.id,
                     senderId: m.sender_id,
                     senderName: m.sender_name,
+                    senderAvatar: m.sender_avatar,
                     content: m.content,
                     timestamp: m.timestamp,
                     isBot: m.is_bot,
@@ -157,7 +166,10 @@ export const useChatStore = create<ChatState>()(
 
         addMessage: (msg: Message) => {
             set((state) => {
-                const isCurrentRoom = msg.roomId === state.activeRoom?.id;
+                // Ensure room IDs are compared consistently
+                const msgRoomId = String(msg.roomId);
+                const activeRoomId = state.activeRoom ? String(state.activeRoom.id) : null;
+                const isCurrentRoom = msgRoomId === activeRoomId;
                 
                 // If message already exists (e.g. from local optimistic update), update it
                 const existingIndex = state.messages.findIndex(m => m.id === msg.id);
@@ -171,19 +183,32 @@ export const useChatStore = create<ChatState>()(
                     }
                 }
 
-                const roomToUpdate = msg.roomId;
+                const roomToUpdate = msgRoomId;
                 let roomExists = false;
                 
                 const updatedRooms = state.rooms.map(room => {
-                    if (room.id === roomToUpdate) {
+                    if (String(room.id) === roomToUpdate) {
                         roomExists = true;
+                        const currentUserId = useAuthStore.getState().currentUser?.id;
+                        const isFromMe = msg.senderId === currentUserId;
+                        
+                        // Handle localized preview for files/images
+                        let previewContent = msg.content;
+                        if (!previewContent) {
+                            if (msg.file_type === 'image') previewContent = '[Hình ảnh]';
+                            else if (msg.file_type === 'file') previewContent = '[Tệp đính kèm]';
+                            else if (msg.is_recalled) previewContent = 'Tin nhắn đã được thu hồi';
+                        }
+                        
                         return { 
                             ...room, 
                             updated_at: msg.timestamp,
-                            last_message: msg.is_recalled ? 'Tin nhắn đã được thu hồi' : msg.content,
+                            last_message: previewContent,
                             last_message_id: msg.id,
                             last_message_sender: msg.senderName,
-                            last_message_at: msg.timestamp
+                            last_message_at: msg.timestamp,
+                            has_unread: isCurrentRoom || isFromMe ? false : true,
+                            unread_count: (isCurrentRoom || isFromMe) ? 0 : (room.unread_count || 0) + 1
                         };
                     }
                     return room;
@@ -191,9 +216,9 @@ export const useChatStore = create<ChatState>()(
 
                 // If room doesn't exist in list (e.g. new direct chat from stranger), 
                 // we should probably trigger a refresh or add a placeholder
-                if (!roomExists && roomToUpdate) {
-                    // Trigger a refresh of the room list in the background
-                    setTimeout(() => get().fetchRooms(), 500);
+                if (!roomExists && roomToUpdate && roomToUpdate !== 'undefined') {
+                    // Trigger a refresh of the room list in the background silently
+                    setTimeout(() => get().fetchRooms(true), 200);
                 }
 
                 const sortedRooms = [...updatedRooms].sort((a, b) => {
@@ -203,6 +228,8 @@ export const useChatStore = create<ChatState>()(
                     // Sắp xếp theo thời gian cập nhật mới nhất
                     const timeA = new Date(a.updated_at || 0).getTime();
                     const timeB = new Date(b.updated_at || 0).getTime();
+                    if (isNaN(timeA)) return 1;
+                    if (isNaN(timeB)) return -1;
                     return timeB - timeA;
                 });
 
@@ -228,35 +255,38 @@ export const useChatStore = create<ChatState>()(
             };
 
             socket.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === 'pong') return;
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'pong') return;
 
-                switch (data.type) {
-                    case 'message':
-                        get().addMessage({
-                            id: data.message_id || Math.random().toString(36).substr(2, 9),
-                            roomId: data.room_id,
-                            senderId: data.sender_id,
-                            senderName: data.sender_name || data.sender,
-                            content: data.content,
-                            file_url: data.file_url,
-                            file_type: data.file_type,
-                            timestamp: data.timestamp || new Date().toISOString(),
-                            isBot: data.is_bot,
-                            is_edited: data.is_edited,
-                            is_recalled: data.is_recalled,
-                            is_pinned: data.is_pinned,
-                            status: data.status,
-                            reply_to_id: data.reply_to_id,
-                            reply_to_content: data.reply_to_content
-                        });
+                    switch (data.type) {
+                        case 'message':
+                            const msgData = {
+                                id: data.message_id || data.id || Math.random().toString(36).substr(2, 9),
+                                roomId: data.room_id,
+                                senderId: data.sender_id,
+                                senderName: data.sender_name || data.sender,
+                                senderAvatar: data.sender_avatar,
+                                content: data.content,
+                                file_url: data.file_url,
+                                file_type: data.file_type,
+                                timestamp: data.timestamp || new Date().toISOString(),
+                                isBot: data.is_bot,
+                                is_edited: data.is_edited,
+                                is_recalled: data.is_recalled,
+                                is_pinned: data.is_pinned,
+                                status: data.status || 'sent',
+                                reply_to_id: data.reply_to_id,
+                                reply_to_content: data.reply_to_content
+                            };
+                            get().addMessage(msgData);
                         
-                        // Nếu đang ở đúng phòng, tự động gửi read receipt cho tin nhắn mới
-                        const currentUserId = useAuthStore.getState().currentUser?.id;
-                        if (get().activeRoom?.id === data.room_id && data.sender_id !== currentUserId) {
-                            get().sendReadReceipt(data.room_id, data.message_id);
-                        }
-                        break;
+                            // Auto read receipt for active room
+                            const currentUserId = useAuthStore.getState().currentUser?.id;
+                            if (get().activeRoom?.id === data.room_id && data.sender_id !== currentUserId) {
+                                get().sendReadReceipt(data.room_id, data.message_id);
+                            }
+                            break;
                     case 'read_receipt':
                         set(state => ({
                             messages: state.messages.map(m => {
@@ -326,6 +356,13 @@ export const useChatStore = create<ChatState>()(
                             )
                         }));
                         break;
+                    case 'reaction':
+                        set(state => ({
+                            messages: state.messages.map(m => 
+                                m.id === data.message_id ? { ...m, reactions: data.reactions } : m
+                            )
+                        }));
+                        break;
                     case 'user_status_change':
                         set(state => {
                             const updatedRooms = state.rooms.map(room => {
@@ -351,6 +388,11 @@ export const useChatStore = create<ChatState>()(
                                 viewingUser: updatedViewingUser
                             };
                         });
+                        break;
+                    case 'force_logout':
+                        toast.error(data.message || "Phiên đăng nhập của bạn đã bị kết thúc bởi quản trị viên.");
+                        get().disconnect();
+                        useAuthStore.getState().logout();
                         break;
                     case 'user_blocked_me':
                         // Cập nhật trạng thái bị chặn vào AuthStore
@@ -497,8 +539,10 @@ export const useChatStore = create<ChatState>()(
                     case 'start':
                         get().addMessage({
                             id: data.message_id,
+                            roomId: data.room_id,
                             senderId: 'ai-bot',
                             senderName: data.sender || 'AI',
+                            senderAvatar: data.sender_avatar,
                             content: '',
                             timestamp: new Date().toISOString(),
                             isBot: true,
@@ -545,13 +589,68 @@ export const useChatStore = create<ChatState>()(
                                 return timeB - timeA;
                             });
 
-                            return { messages: newMessages, rooms: updatedRooms, isAiTyping: false };
+                            const newAiTyping = { ...state.aiTypingRooms };
+                            delete newAiTyping[data.room_id];
+
+                            return { 
+                                messages: newMessages, 
+                                rooms: updatedRooms, 
+                                aiTypingRooms: newAiTyping
+                            };
                         });
                         break;
                     case 'typing':
-                        if (data.room_id === get().activeRoom?.id) {
-                            set({ isAiTyping: data.status });
-                        }
+                        set(state => {
+                            const roomId = data.room_id || 'unknown';
+                            if (data.user_id) {
+                                // Ngăn hiển thị trạng thái đang soạn tin của chính mình
+                                if (data.user_id === useAuthStore.getState().currentUser?.id) return state;
+
+                                const newTyping = { ...state.typingUsers };
+                                if (!newTyping[roomId]) {
+                                    newTyping[roomId] = {};
+                                } else {
+                                    newTyping[roomId] = { ...newTyping[roomId] };
+                                }
+
+                                if (data.status) {
+                                    newTyping[roomId][data.user_id] = data.username;
+                                } else {
+                                    delete newTyping[roomId][data.user_id];
+                                }
+                                
+                                if (Object.keys(newTyping[roomId]).length === 0) {
+                                    delete newTyping[roomId];
+                                }
+                                
+                                return { ...state, typingUsers: newTyping };
+                            } else {
+                                // AI typing
+                                const newAiTyping = { ...state.aiTypingRooms };
+                                if (data.status) {
+                                    newAiTyping[roomId] = true;
+                                } else {
+                                    delete newAiTyping[roomId];
+                                }
+                                return { ...state, aiTypingRooms: newAiTyping };
+                            }
+                        });
+                        break;
+                    case 'new_room':
+                        set(state => {
+                            if (state.rooms.some(r => r.id === data.room.id)) return state;
+                            
+                            const newRooms = [data.room, ...state.rooms].sort((a, b) => {
+                                if (a.is_pinned && !b.is_pinned) return -1;
+                                if (!a.is_pinned && b.is_pinned) return 1;
+                                const timeA = new Date(a.updated_at || 0).getTime();
+                                const timeB = new Date(b.updated_at || 0).getTime();
+                                return timeB - timeA;
+                            });
+                            
+                            return { rooms: newRooms };
+                        });
+                        toast.success(`Bạn có phòng chat mới: ${data.room.name}`);
                         break;
                     case 'ai_suggestions_list':
                         set((state) => {
@@ -562,10 +661,34 @@ export const useChatStore = create<ChatState>()(
                         });
                         break;
                     case 'delete_for_me_success':
-                        set((state) => ({
-                            messages: state.messages.filter(m => m.id !== data.message_id)
-                        }));
+                        set((state) => {
+                            const newMessages = state.messages.filter(m => m.id !== data.message_id);
+                            
+                            // Cập nhật last_message cho sidebar nếu tin nhắn bị xóa là cuối cùng
+                            const updatedRooms = state.rooms.map(room => {
+                                if (room.id === data.room_id && room.last_message_id === data.message_id) {
+                                    // Tìm tin nhắn cuối cùng mới từ danh sách messages hiện có
+                                    const nextLastMsg = [...newMessages].reverse()[0];
+                                    return {
+                                        ...room,
+                                        last_message: nextLastMsg ? (nextLastMsg.is_recalled ? 'Tin nhắn đã được thu hồi' : nextLastMsg.content) : '',
+                                        last_message_id: nextLastMsg ? nextLastMsg.id : undefined,
+                                        last_message_sender: nextLastMsg ? nextLastMsg.senderName : undefined,
+                                        last_message_at: nextLastMsg ? nextLastMsg.timestamp : undefined
+                                    };
+                                }
+                                return room;
+                            });
+
+                            return { 
+                                messages: newMessages,
+                                rooms: updatedRooms
+                            };
+                        });
                         break;
+                }
+                } catch (error) {
+                    console.error('WebSocket message processing error:', error);
                 }
             };
 
@@ -573,11 +696,24 @@ export const useChatStore = create<ChatState>()(
                 set({ isConnected: false, socket: null });
                 if (heartBeatTimer) clearInterval(heartBeatTimer);
                 
-                // Reconnect logic
+                // Reconnect logic: Chỉ reconnect nếu vẫn còn token trong AuthStore
+                const currentToken = useAuthStore.getState().token;
+                if (!currentToken) {
+                    console.log('🔇 No token found, stopping reconnection');
+                    reconnectAttempt = 0;
+                    return;
+                }
+
                 const interval = RECONNECT_INTERVALS[reconnectAttempt] || 10000;
                 reconnectAttempt = Math.min(reconnectAttempt + 1, RECONNECT_INTERVALS.length - 1);
+                
+                console.log(`🔄 WebSocket closed. Reconnecting in ${interval}ms... (Attempt ${reconnectAttempt})`);
+                
                 setTimeout(() => {
-                    if (token) get().connect(token);
+                    const latestToken = useAuthStore.getState().token;
+                    if (latestToken) {
+                        get().connect(latestToken);
+                    }
                 }, interval);
             };
         },
@@ -592,9 +728,37 @@ export const useChatStore = create<ChatState>()(
 
         sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }, receiverId?: string) => {
             const { socket, activeRoom } = get();
+            if (activeRoom && (!socket || socket.readyState !== WebSocket.OPEN)) {
+                toast.error("Mất kết nối server. Vui lòng chờ đang kết nối lại...");
+                const token = useAuthStore.getState().token;
+                if (token) get().connect(token);
+                return false;
+            }
             if (socket && socket.readyState === WebSocket.OPEN && activeRoom) {
+                // Optimistic Update
+                const currentUserId = useAuthStore.getState().currentUser?.id;
+                const currentUsername = useAuthStore.getState().currentUser?.username;
+                const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                
+                const optimisticMsg: Message = {
+                    id: tempId,
+                    roomId: activeRoom.id,
+                    senderId: currentUserId || '',
+                    senderName: currentUsername || 'Bạn',
+                    content: content,
+                    timestamp: new Date().toISOString(),
+                    status: 'sending',
+                    file_url: fileData?.url,
+                    file_type: fileData?.type,
+                    reply_to_id: replyToId,
+                    isBot: false
+                };
+                
+                get().addMessage(optimisticMsg);
+
                 socket.send(JSON.stringify({
                     type: 'message',
+                    id: tempId, // Gửi tempId để backend trả về nếu cần (tùy backend hỗ trợ)
                     content,
                     room_id: activeRoom.id,
                     reply_to_id: replyToId,
@@ -802,6 +966,17 @@ export const useChatStore = create<ChatState>()(
         },
 
         setActiveDropdown: (id: string | null) => set({ activeDropdownId: id }),
+
+        sendTypingStatus: (status: boolean) => {
+            const { socket, activeRoom } = get();
+            if (socket && socket.readyState === WebSocket.OPEN && activeRoom) {
+                socket.send(JSON.stringify({
+                    type: 'typing',
+                    room_id: activeRoom.id,
+                    status
+                }));
+            }
+        },
     };
 },
 {

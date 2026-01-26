@@ -27,12 +27,15 @@ async def get_room_messages(
 
     # Isolation logic cho phòng đặc biệt (AI Assistant, Help & Support)
     if room_id in ["ai", "help"]:
-        # Ngay cả Admin khi vào phòng này trong view cá nhân cũng chỉ thấy thread của chính họ
-        # (Để phản hồi khách hàng, hãy sử dụng Admin Dashboard)
-        query["$or"] = [
-            {"sender_id": current_user["id"]},
-            {"receiver_id": current_user["id"]}
-        ]
+        # Nếu là Admin, cho phép xem toàn bộ lịch sử trong phòng Help để hỗ trợ khách hàng
+        # Nếu là người dùng thường, chỉ thấy thread của chính họ
+        if room_id == "help" and (current_user.get("is_superuser") or current_user.get("role") == "admin"):
+            pass # Admins see everything in help
+        else:
+            query["$or"] = [
+                {"sender_id": current_user["id"]},
+                {"receiver_id": current_user["id"]}
+            ]
 
     messages = await db["messages"].find(query).sort("timestamp", 1).limit(limit).to_list(length=limit)
     return messages

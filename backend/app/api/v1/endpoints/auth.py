@@ -125,7 +125,7 @@ async def update_user_me(
         # Notify friends about status change if already online
         if current_user.get("is_online"):
             try:
-                from backend.app.api.v1.endpoints.websocket import notify_user_status_change
+                from backend.app.api.v1.endpoints.ws.utils import notify_user_status_change
                 await notify_user_status_change(current_user["id"], user_in.show_online_status)
             except Exception as e:
                 print(f"Error notifying status change: {e}")

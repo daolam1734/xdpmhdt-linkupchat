@@ -40,7 +40,7 @@ export const Avatar: React.FC<AvatarProps> = ({ name, url, isOnline, isBot, size
         sm: "w-[28px] h-[28px] text-[10px]",
         md: "w-[36px] h-[36px] text-xs",
         lg: "w-[48px] h-[48px] text-[15px]",
-        xl: "w-[40px] h-[40px] text-sm"
+        xl: "w-[80px] h-[80px] text-[24px]"
     };
 
     return (

@@ -30,12 +30,18 @@ async def get_admin_config(
         # Fallback to env settings if not in DB
         return {
             "google_api_key": settings.GOOGLE_API_KEY,
-            "openai_api_key": getattr(settings, "OPENAI_API_KEY", "")
+            "openai_api_key": getattr(settings, "OPENAI_API_KEY", ""),
+            "ai_auto_reply": True,
+            "ai_sentiment_analysis": False,
+            "ai_system_prompt": "Bạn là LinkUp AI, trợ lý ảo thông minh được phát triển để giúp người dùng kết nối. Hãy trả lời thân thiện, chuyên nghiệp và ngắn gọn bằng Tiếng Việt."
         }
     
     return {
         "google_api_key": config.get("google_api_key", settings.GOOGLE_API_KEY),
-        "openai_api_key": config.get("openai_api_key", "")
+        "openai_api_key": config.get("openai_api_key", ""),
+        "ai_auto_reply": config.get("ai_auto_reply", True),
+        "ai_sentiment_analysis": config.get("ai_sentiment_analysis", False),
+        "ai_system_prompt": config.get("ai_system_prompt", "Bạn là LinkUp AI, trợ lý ảo thông minh được phát triển để giúp người dùng kết nối. Hãy trả lời thân thiện, chuyên nghiệp và ngắn gọn bằng Tiếng Việt.")
     }
 
 @router.post("/config")
@@ -119,6 +125,8 @@ async def get_system_stats(
     """
     Lấy thống kê hệ thống mở rộng.
     """
+    import time
+    start_time = time.time()
     # Loại bỏ Admin khỏi thống kê người dùng thông thường
     total_users = await db["users"].count_documents({"is_superuser": False})
     total_admins = await db["users"].count_documents({"is_superuser": True})
@@ -127,12 +135,74 @@ async def get_system_stats(
     
     # Thời gian
     now = datetime.now(timezone.utc)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday = now - timedelta(days=1)
     last_week = now - timedelta(days=7)
     
     # Thống kê tin nhắn
     new_messages = await db["messages"].count_documents({"timestamp": {"$gte": yesterday}})
     
+    # Thống kê AI (Ước tính từ tin nhắn bot)
+    ai_calls_today = await db["messages"].count_documents({
+        "is_bot": True, 
+        "timestamp": {"$gte": today}
+    })
+
+    # Thống kê báo cáo thực tế
+    unhandled_reports = await db["reports"].count_documents({"status": "pending"}) if "reports" in await db.list_collection_names() else 0
+
+    # Tính toán sức khỏe hệ thống
+    db_size_mb = 0
+    try:
+        db_stats = await db.command("dbStats")
+        db_size_mb = round(db_stats.get("dataSize", 0) / (1024 * 1024), 2)
+    except:
+        pass
+
+    # Tính latency sớm để dùng cho alerts
+    latency_ms = (time.time() - start_time) * 1000
+
+    # Cảnh báo hệ thống thực tế dựa trên dữ liệu
+    system_alerts = []
+    
+    if latency_ms > 100:
+        system_alerts.append({
+            "type": "server",
+            "level": "warning",
+            "message": f"Phản hồi DB chậm ({round(latency_ms, 1)}ms). Hãy kiểm tra chỉ mục (index).",
+            "timestamp": now.isoformat()
+        })
+    
+    # 1. Kiểm tra lẫy lỗi AI gần đây (nếu có log)
+    # Ở đây ta giả định nếu số tin nhắn bot trong 1h qua = 0 mà có tin nhắn user tag @ai thì có thể AI lỗi
+    # Nhưng đơn giản hơn: Trả về các log hệ thống thực tế nếu có collection "logs"
+    
+    # Thêm các cảnh báo dựa trên ngưỡng (Thresholds)
+    if ai_calls_today > 500:
+        system_alerts.append({
+            "type": "ai",
+            "level": "warning",
+            "message": f"Lượt sử dụng AI cao ({ai_calls_today}). Kiểm tra hạn mức API.",
+            "timestamp": now.isoformat()
+        })
+    
+    if unhandled_reports > 5:
+        system_alerts.append({
+            "type": "security",
+            "level": "critical",
+            "message": f"Có {unhandled_reports} báo cáo vi phạm chưa xử lý!",
+            "timestamp": now.isoformat()
+        })
+
+    # Nếu không có cảnh báo nào, thêm 1 tin nhắn "Hệ thống ổn định" mang tính thực tế
+    if not system_alerts:
+        system_alerts.append({
+            "type": "server",
+            "level": "info",
+            "message": "Các dịch vụ hệ thống đang hoạt động bình thường.",
+            "timestamp": now.isoformat()
+        })
+
     # Thống kê người dùng (Chỉ tính người dùng thường)
     online_users = await db["users"].count_documents({"is_online": True, "is_superuser": False})
     new_users_24h = await db["users"].count_documents({"created_at": {"$gte": yesterday}, "is_superuser": False})
@@ -149,8 +219,8 @@ async def get_system_stats(
         {"$match": {"last_sender_id": {"$ne": None}}} # Logic: Nếu sender_id ko phải admin (ở đây tạm so sánh khác null, thực tế nên check role)
     ]
     # Lấy danh sách admin để filter
-    admins_cursor = db["users"].find({"is_superuser": True}, {"_id": 1})
-    admin_ids = [str(a["_id"]) for a in await admins_cursor.to_list(length=10)]
+    admins_cursor = db["users"].find({"is_superuser": True}, {"id": 1})
+    admin_ids = [a["id"] for a in await admins_cursor.to_list(length=100)]
     
     support_threads = await db["messages"].aggregate(pipeline_support).to_list(length=100)
     pending_support = 0
@@ -205,6 +275,10 @@ async def get_system_stats(
         h = (current_hour - 23 + i) % 24
         ordered_stats.append(hourly_stats[h])
 
+    # Tính latency
+    import time
+    latency_ms = (time.time() - start_time) * 1000
+
     return {
         "total_users": total_users,
         "total_admins": total_admins,
@@ -215,8 +289,13 @@ async def get_system_stats(
         "new_users_24h": new_users_24h,
         "new_users_7d": new_users_7d,
         "pending_support": pending_support,
+        "ai_usage_count": ai_calls_today,
+        "unhandled_reports": unhandled_reports,
+        "db_size_mb": db_size_mb,
+        "system_alerts": system_alerts,
         "top_rooms": top_rooms,
-        "hourly_stats": ordered_stats
+        "hourly_stats": ordered_stats,
+        "latency_ms": round(latency_ms, 2)
     }
 
 @router.get("/users", response_model=List[UserSchema])
@@ -411,7 +490,7 @@ async def support_reply(
     await db["messages"].insert_one(db_msg)
     
     # Broadcast tới user (nếu online)
-    from backend.app.api.v1.endpoints.websocket import manager
+    from .ws.manager import manager
     metadata = {
         "type": "message",
         "id": msg_id,
@@ -542,6 +621,49 @@ async def update_user_info(
         
     return {"status": "success", "message": "User info updated"}
 
+@router.post("/users/{user_id}/toggle-active")
+async def toggle_user_active(
+    user_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """Admin bật/tắt trạng thái hoạt động của người dùng (Khóa/Mở khóa)"""
+    user = await db["users"].find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    new_status = not user.get("is_active", True)
+    await db["users"].update_one({"id": user_id}, {"$set": {"is_active": new_status}})
+    
+    # Nếu bị khóa, thì force logout luôn
+    if not new_status:
+        from .ws.manager import manager
+        await manager.force_disconnect(user_id)
+        
+    return {"status": "success", "is_active": new_status}
+
+@router.post("/users/{user_id}/force-logout")
+async def force_logout_user(
+    user_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """Admin ép buộc người dùng đăng xuất (Đóng WebSocket)"""
+    from .ws.manager import manager
+    await manager.force_disconnect(user_id)
+    await db["users"].update_one({"id": user_id}, {"$set": {"is_online": False}})
+    return {"status": "success", "message": "User forced to logout"}
+
+@router.post("/users/{user_id}/reset-status")
+async def reset_user_status(
+    user_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """Admin reset trạng thái online của người dùng (về offline)"""
+    await db["users"].update_one({"id": user_id}, {"$set": {"is_online": False}})
+    return {"status": "success", "message": "User status reset to offline"}
+
 # --- ROOM MANAGEMENT ---
 
 @router.get("/rooms")
@@ -569,10 +691,50 @@ async def list_rooms_for_admin(
             "created_at": room.get("created_at"),
             "created_by": room.get("created_by"),
             "message_count": msg_count,
-            "member_count": len(room.get("members", []))
+            "member_count": len(room.get("members", [])),
+            "is_locked": room.get("is_locked", False)
         })
     
     return results
+
+@router.post("/rooms/{room_id}/toggle-lock")
+async def toggle_room_lock(
+    room_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """Admin khóa/mở khóa một phòng chat (ngăn chặn nhắn tin)"""
+    room = await db["chat_rooms"].find_one({"id": room_id})
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    new_status = not room.get("is_locked", False)
+    await db["chat_rooms"].update_one({"id": room_id}, {"$set": {"is_locked": new_status}})
+    
+    return {"status": "success", "is_locked": new_status}
+
+@router.post("/rooms/cleanup/empty")
+async def delete_empty_rooms(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """Xóa các phòng chat không có thành viên hoặc không có tin nhắn (ngoại trừ phòng hệ thống)"""
+    # Lấy các phòng không phải help/general
+    cursor = db["chat_rooms"].find({"id": {"$nin": ["general", "help"]}})
+    rooms = await cursor.to_list(length=1000)
+    
+    deleted_count = 0
+    for room in rooms:
+        room_id = room["id"]
+        member_count = len(room.get("members", []))
+        msg_count = await db["messages"].count_documents({"room_id": room_id})
+        
+        if member_count == 0 or msg_count == 0:
+            await db["chat_rooms"].delete_one({"id": room_id})
+            await db["messages"].delete_many({"room_id": room_id})
+            deleted_count += 1
+            
+    return {"status": "success", "deleted_count": deleted_count}
 
 @router.delete("/rooms/{room_id}")
 async def delete_room_by_admin(

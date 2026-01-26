@@ -45,7 +45,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const [isDeletingChat, setIsDeletingChat] = useState(false);
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
     const { currentUser } = useAuthStore();
-    const { clearHistory, togglePin, deleteRoom, activeDropdownId, setActiveDropdown, setViewingUser, viewingUser } = useChatStore();
+    const { 
+        clearHistory, 
+        togglePin, 
+        deleteRoom, 
+        activeDropdownId, 
+        setActiveDropdown, 
+        setViewingUser, 
+        viewingUser,
+        typingUsers,
+        aiTypingRooms
+    } = useChatStore();
 
     const menuRoomId = activeDropdownId?.startsWith('sidebar-room-') ? activeDropdownId.replace('sidebar-room-', '') : null;
 
@@ -106,7 +116,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
             setSearchQuery('');
             setSearchResults([]);
             setIsSearching(false);
-            if (onRoomCreated) await onRoomCreated();
+            if (onRoomCreated) {
+                await onRoomCreated();
+                // Tìm lại phòng trong store sau khi đã fetch mới để có đầy đủ thông tin (avatar, online,...)
+                const freshRooms = useChatStore.getState().rooms;
+                const freshRoom = freshRooms.find(r => r.id === room.id);
+                if (freshRoom) {
+                    onSelectRoom?.(freshRoom);
+                    return;
+                }
+            }
             onSelectRoom?.(room);
         } catch (error: any) {
             console.error('Start chat error:', error);
@@ -356,8 +375,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             </div>
                         )}
 
-                        {/* Special AI Room section if exists */}
-                        {rooms.filter(r => r.id === 'ai').map((room) => (
+                        {/* Special AI & Support Rooms section */}
+                        {rooms.filter(r => r.id === 'ai' || r.id === 'help').map((room) => (
                             <div
                                 key={room.id}
                                 onClick={() => {
@@ -367,26 +386,80 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 className={clsx(
                                     "w-full flex items-center space-x-3 px-3 py-3 rounded-xl transition-all group relative border border-secondary/10 shadow-sm mb-1 cursor-pointer",
                                     activeRoomId === room.id 
-                                        ? "bg-purple-50 border-purple-200" 
+                                        ? (room.id === 'ai' ? "bg-purple-50 border-purple-200" : "bg-blue-50 border-blue-200")
                                         : "bg-white hover:bg-gray-50"
                                 )}
                             >
                                 <div className="relative shrink-0">
-                                    <Avatar name={room.name} url={room.avatar_url} isBot={true} size="lg" isOnline={true} />
+                                    <Avatar 
+                                        name={room.name} 
+                                        url={room.avatar_url} 
+                                        isBot={true} 
+                                        size="lg" 
+                                        isOnline={true}
+                                        className={room.id === 'help' ? "ring-2 ring-blue-100" : "ring-2 ring-purple-100"}
+                                    />
                                 </div>
                                 <div className="flex-1 text-left overflow-hidden pr-2">
                                     <div className="flex justify-between items-center mb-0.5">
-                                        <h3 className="text-[15px] font-bold text-gray-900 truncate flex items-center gap-1.5">
+                                        <h3 className={clsx(
+                                            "text-[15px] truncate flex items-center gap-1.5",
+                                            activeRoomId === room.id ? "font-bold text-gray-900" : (room.has_unread ? "font-bold text-black" : "font-semibold text-gray-900")
+                                        )}>
                                             {room.name}
-                                            <span className="text-[9px] px-1.5 py-0.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-md font-bold uppercase tracking-wider shadow-sm">LinkUp AI</span>
+                                            {room.id === 'ai' && (
+                                                <span className="text-[9px] px-1.5 py-0.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-md font-bold uppercase tracking-wider shadow-sm">LinkUp AI</span>
+                                            )}
+                                            {room.id === 'help' && (
+                                                <span className="text-[9px] px-1.5 py-0.5 bg-blue-600 text-white rounded-md font-bold uppercase tracking-wider shadow-sm uppercase">Support</span>
+                                            )}
                                         </h3>
+                                        {room.id === 'help' && (room.last_message_at || room.updated_at) && (
+                                            <span className={clsx(
+                                                "text-[10px] font-normal",
+                                                room.has_unread ? "text-blue-600 font-bold" : "text-gray-400"
+                                            )}>
+                                                {formatRelativeTime(room.last_message_at || room.updated_at || '')}
+                                            </span>
+                                        )}
                                     </div>
-                                    <p className="text-[12.5px] text-gray-500 font-medium truncate">Đang hoạt động • Luôn phản hồi</p>
+                                    <p className={clsx(
+                                        "text-[12.5px] truncate",
+                                        activeRoomId === room.id ? "text-gray-500 font-medium" : (room.has_unread ? "text-gray-900 font-bold" : "text-gray-500 font-medium")
+                                    )}>
+                                        {aiTypingRooms[room.id] ? (
+                                            <span className="text-blue-600 font-bold italic animate-pulse">LinkUp AI đang soạn...</span>
+                                        ) : room.id === 'help' ? (
+                                            (room.last_message) ? (
+                                                <span className="flex items-center">
+                                                    {room.last_message_sender && (
+                                                        <span className="font-bold mr-1">{room.last_message_sender === currentUser?.username ? 'Bạn: ' : `${room.last_message_sender}: `}</span>
+                                                    )}
+                                                    {room.last_message}
+                                                </span>
+                                            ) : 'Gửi yêu cầu hỗ trợ ngay...'
+                                        ) : (
+                                            room.last_message ? (
+                                                <span className="flex items-center">
+                                                    {room.last_message_sender && (
+                                                        <span className="font-bold mr-1">{room.last_message_sender === currentUser?.username ? 'Bạn: ' : ''}</span>
+                                                    )}
+                                                    {room.last_message}
+                                                </span>
+                                            ) : 'Bắt đầu hỏi LinkUp AI...'
+                                        )}
+                                    </p>
                                 </div>
                                 
                                 <div className="relative flex items-center">
+                                    {room.has_unread && activeRoomId !== room.id && (
+                                        <div className="w-2.5 h-2.5 bg-blue-600 rounded-full shadow-sm mr-2" />
+                                    )}
                                     {activeRoomId === room.id ? (
-                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-purple-600 rounded-full animate-pulse shadow-[0_0_8px_rgba(147,51,234,0.5)]" />
+                                        <div className={clsx(
+                                            "absolute right-3 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full animate-pulse shadow-sm",
+                                            room.id === 'ai' ? "bg-purple-600" : "bg-blue-600"
+                                        )} />
                                     ) : (
                                         <button
                                             onClick={(e) => {
@@ -395,8 +468,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                 setActiveDropdown(activeDropdownId === roomMenuId ? null : roomMenuId);
                                             }}
                                             className={clsx(
-                                                "ml-2 p-1.5 hover:bg-purple-100 rounded-full text-purple-400 transition-all",
-                                                activeDropdownId === `sidebar-room-${room.id}` ? "opacity-100 bg-purple-50" : "opacity-0 group-hover:opacity-100"
+                                                "ml-2 p-1.5 rounded-full transition-all",
+                                                room.id === 'ai' ? "hover:bg-purple-100 text-purple-400" : "hover:bg-blue-100 text-blue-400",
+                                                activeDropdownId === `sidebar-room-${room.id}` ? "opacity-100 opacity-100" : "opacity-0 group-hover:opacity-100"
                                             )}
                                         >
                                             <MoreHorizontal size={18} />
@@ -422,7 +496,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             </div>
                         ))}
 
-                        {rooms.filter(r => r.id !== 'ai').map((room) => (
+                        {rooms.filter(r => r.id !== 'ai' && r.id !== 'help').map((room) => (
                             <div
                                 key={room.id}
                                 onClick={() => {
@@ -450,7 +524,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         <div className="flex items-center overflow-hidden">
                                             <span className={clsx(
                                                 "truncate text-[15px]",
-                                                activeRoomId === room.id ? "font-bold text-blue-600" : "font-semibold text-gray-900"
+                                                activeRoomId === room.id ? "font-bold text-blue-600" : (room.has_unread ? "font-bold text-black" : "font-semibold text-gray-900")
                                             )}>
                                                 {room.name}
                                             </span>
@@ -459,7 +533,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             )}
                                         </div>
                                         {(room.last_message_at || room.updated_at) && (
-                                            <span className="text-[11px] text-gray-500 flex-shrink-0 ml-2">
+                                            <span className={clsx(
+                                                "text-[11px] flex-shrink-0 ml-2",
+                                                room.has_unread ? "text-blue-600 font-bold" : "text-gray-500"
+                                            )}>
                                                 {formatRelativeTime(room.last_message_at || room.updated_at || '')}
                                             </span>
                                         )}
@@ -467,18 +544,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     <div className="flex items-center space-x-1 overflow-hidden">
                                         <p className={clsx(
                                             "text-[13px] truncate flex items-center",
-                                            activeRoomId === room.id ? "text-blue-500 font-medium" : "text-gray-500"
+                                            activeRoomId === room.id ? "text-blue-500 font-medium" : (room.has_unread ? "text-gray-900 font-bold" : "text-gray-500")
                                         )}>
-                                            {room.last_message_sender && room.type !== 'direct' && (
-                                                <span className="font-medium mr-1">{room.last_message_sender}: </span>
+                                            {typingUsers[room.id] && Object.keys(typingUsers[room.id]).length > 0 ? (
+                                                <span className="text-blue-600 font-bold italic animate-pulse">
+                                                    {Object.values(typingUsers[room.id])[0]} đang soạn tin...
+                                                </span>
+                                            ) : aiTypingRooms[room.id] ? (
+                                                <span className="text-blue-600 font-bold italic animate-pulse">LinkUp AI đang soạn...</span>
+                                            ) : (
+                                                <>
+                                                    {room.last_message_sender && (
+                                                        <span className="font-medium mr-1">
+                                                            {room.last_message_sender === currentUser?.username ? 'Bạn: ' : (room.type !== 'direct' ? `${room.last_message_sender}: ` : '')}
+                                                        </span>
+                                                    )}
+                                                    {room.last_message || (
+                                                        room.id === 'ai' ? 'Trợ lý AI đang sẵn sàng hỗ trợ...' : 
+                                                        room.id === 'help' ? 'Bắt đầu yêu cầu hỗ trợ ngay' : 
+                                                        room.id === 'general' ? 'Tham gia thảo luận cùng mọi người' :
+                                                        (room.type === 'public' || room.type === 'private') ? 'Nhóm chưa có tin nhắn nào' :
+                                                        'Bắt đầu cuộc trò chuyện mới'
+                                                    )}
+                                                </>
                                             )}
-                                            {room.last_message || (room.type === 'ai' ? 'Trợ lý AI đang chờ bạn...' : 'Bắt đầu cuộc trò chuyện mới')}
                                         </p>
                                     </div>
                                 </div>
 
                                 <div className="relative flex items-center">
-                                    {activeRoomId !== room.id && (
+                                    {room.has_unread && activeRoomId !== room.id && (
+                                        <div className="w-2.5 h-2.5 bg-blue-600 rounded-full shadow-sm mr-1" />
+                                    )}
+                                    {activeRoomId !== room.id && !room.has_unread && (
                                         <div className="w-2.5 h-2.5 bg-blue-600 rounded-full opacity-0 group-hover:opacity-40 transition-opacity" />
                                     )}
                                     <button

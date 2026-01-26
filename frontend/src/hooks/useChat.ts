@@ -16,9 +16,9 @@ export const useChat = () => {
 
     const { currentUser, logout, token } = useAuthStore();
 
-    const handleSendMessage = (content: string, replyToId?: string) => {
-        if (!content.trim() && content !== '👍') return;
-        const success = sendMessage(content, replyToId);
+    const handleSendMessage = (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }, receiverId?: string) => {
+        if (!content.trim() && content !== '👍' && !fileData) return;
+        const success = sendMessage(content, replyToId, fileData, receiverId);
         if (!success) {
             console.error('Message failed to send. Check connection.');
         }
