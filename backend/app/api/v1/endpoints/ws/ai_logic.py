@@ -58,8 +58,7 @@ async def run_ai_generation_task(
     try:
         from backend.app.core.admin_config import get_system_config
         sys_config = await get_system_config(db)
-        custom_prompt = sys_config.get("ai_system_prompt")
-
+        
         async def send_ai_data(data: dict):
             if not is_ai_room and data["type"] in ["typing", "start", "chunk"]:
                 return
@@ -84,6 +83,107 @@ async def run_ai_generation_task(
             else:
                 await manager.broadcast_to_room(room_id, data)
 
+        # 1. KIỂM TRA BẬT/TẮT AI HỆ THỐNG
+        if not sys_config.get("ai_enabled", True):
+            await send_ai_data({
+                "type": "message",
+                "room_id": room_id,
+                "content": "⚠️ Hệ thống AI hiện đang tạm bảo trì hoặc bị tắt bởi quản trị viên. Vui lòng quay lại sau.",
+                "sender": "Hệ thống",
+                "is_error": True
+            })
+            return
+
+        # 2. KIỂM TRA HẠN CHẾ RIÊNG BIỆT (USER/PHÒNG)
+        user_doc = await db["users"].find_one({"id": user_id})
+        if user_doc and user_doc.get("ai_restricted"):
+            await send_ai_data({
+                "type": "message",
+                "room_id": room_id,
+                "content": "❌ Tài khoản của bạn đã bị hạn chế sử dụng AI bởi quản trị viên.",
+                "sender": "Hệ thống",
+                "is_error": True
+            })
+            return
+
+        room_doc = await db["chat_rooms"].find_one({"id": room_id})
+        if room_doc and room_doc.get("ai_restricted"):
+            await send_ai_data({
+                "type": "message",
+                "room_id": room_id,
+                "content": "❌ Phòng chat này đã bị hạn chế sử dụng hỗ trợ AI.",
+                "sender": "Hệ thống",
+                "is_error": True
+            })
+            return
+
+        # 2.5 KIỂM TRA TRẠNG THÁI HỖ TRỢ (NẾU LÀ PHÒNG HELP)
+        if room_id == "help" and not is_suggestion_mode:
+            thread = await db["support_threads"].find_one({"user_id": user_id})
+            # AI sẽ im lặng CHỈ KHI trạng thái là 'waiting' (Admin đang trực tiếp xử lý)
+            # Nếu là 'ai_processing' hoặc 'resolved', AI sẽ tiếp nhận hỗ trợ.
+            if thread and thread.get("status") == "waiting":
+                return
+            
+            # Tự động chuyển về 'ai_processing' nếu AI đang phản hồi cho một thread đã đóng hoặc chưa rõ
+            if not thread or thread.get("status") == "resolved":
+                new_status = "ai_processing"
+                await db["support_threads"].update_one(
+                    {"user_id": user_id},
+                    {"$set": {
+                        "status": new_status,
+                        "username": username,
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }},
+                    upsert=True
+                )
+                # Thông báo thời gian thực
+                await manager.send_to_user(user_id, {
+                    "type": "support_status_update",
+                    "room_id": "help",
+                    "status": new_status
+                })
+
+        # 3. KIỂM TRA GIỚI HẠN SỐ LƯỢNG (CHỈ ÁP DỤNG CHO USER THƯỜNG)
+        if user_role != "admin" and "ai_unlimited" not in user_permissions:
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # Giới hạn cá nhân
+            user_calls = await db["ai_usage"].count_documents({
+                "user_id": user_id,
+                "timestamp": {"$gte": today_start},
+                "status": "success"
+            })
+            user_limit = sys_config.get("ai_limit_per_user", 50)
+            if user_calls >= user_limit:
+                await send_ai_data({
+                    "type": "message",
+                    "room_id": room_id,
+                    "content": f"❌ Bạn đã hết lượt sử dụng AI hôm nay ({user_limit}/{user_limit}). Thử lại vào ngày mai nhé!",
+                    "sender": "Hệ thống",
+                    "is_error": True
+                })
+                return
+
+            # Giới hạn phòng (Group)
+            room_calls = await db["ai_usage"].count_documents({
+                "room_id": room_id,
+                "timestamp": {"$gte": today_start},
+                "status": "success"
+            })
+            room_limit = sys_config.get("ai_limit_per_group", 200)
+            if room_calls >= room_limit:
+                await send_ai_data({
+                    "type": "message",
+                    "room_id": room_id,
+                    "content": f"❌ Phòng này đã hết lượt sử dụng AI hôm nay ({room_limit}/{room_limit}).",
+                    "sender": "Hệ thống",
+                    "is_error": True
+                })
+                return
+
+        custom_prompt = sys_config.get("ai_system_prompt")
+        
         await send_ai_data({"type": "typing", "room_id": room_id, "status": True})
         await send_ai_data({
             "type": "start",
@@ -186,6 +286,16 @@ async def run_ai_generation_task(
             if last_error: raise last_error
             else: raise Exception("All models failed to respond")
 
+        # 3. GHI LOG SỬ DỤNG THÀNH CÔNG
+        await db["ai_usage"].insert_one({
+            "message_id": ai_msg_id,
+            "timestamp": datetime.now(timezone.utc),
+            "user_id": user_id,
+            "room_id": room_id,
+            "status": "success",
+            "model": current_model_name if 'current_model_name' in locals() else "unknown"
+        })
+
         ai_final_ts = datetime.now(timezone.utc)
         
         if not is_suggestion_mode:
@@ -228,6 +338,28 @@ async def run_ai_generation_task(
 
     except Exception as e:
         print(f"❌ Background AI Error: {e}")
+        # GHI LOG LỖI MỚI THEO MVP
+        try:
+            await db["ai_usage"].insert_one({
+                "timestamp": datetime.now(timezone.utc),
+                "user_id": user_id,
+                "room_id": room_id,
+                "status": "error",
+                "error_msg": str(e)
+            })
+        except: pass
+
+        # Log error to system
+        try:
+            await db["system_logs"].insert_one({
+                "type": "ai_error",
+                "message": str(e),
+                "room_id": room_id,
+                "user_id": user_id,
+                "timestamp": datetime.now(timezone.utc)
+            })
+        except: pass
+
         await send_ai_data({"type": "typing", "room_id": room_id, "status": False})
         try:
             await send_ai_data({

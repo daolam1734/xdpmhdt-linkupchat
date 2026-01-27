@@ -66,6 +66,11 @@ async def get_rooms(
                     {"sender_id": current_user["id"]},
                     {"receiver_id": current_user["id"]}
                 ]
+                # Thêm metadata status cho người dùng
+                thread = await db["support_threads"].find_one({"user_id": current_user["id"]})
+                if thread:
+                    room["support_status"] = thread.get("status")
+                    room["support_note"] = thread.get("internal_note") # Người dùng có thể thấy note nếu cần (hoặc chỉ status)
             else:
                 # Nếu là admin, đổi tên phòng để phân biệt
                 room["name"] = "Hỗ trợ khách hàng (Admin)"
@@ -93,6 +98,12 @@ async def get_rooms(
             last_message_id = str(last_msg[0].get("id"))
             if last_msg[0].get("is_recalled"):
                 last_message_content = "Tin nhắn đã được thu hồi"
+            elif last_msg[0].get("file_url"):
+                file_type = last_msg[0].get("file_type")
+                if file_type == "image":
+                    last_message_content = "[Hình ảnh]"
+                else:
+                    last_message_content = "[Tệp đính kèm]"
             else:
                 last_message_content = last_msg[0].get("content")
             last_message_sender = last_msg[0].get("sender_name")
@@ -302,3 +313,37 @@ async def delete_room_for_user(
         raise HTTPException(status_code=404, detail="Bạn không tham gia phòng này.")
         
     return {"status": "success", "message": "Đã xóa đoạn chat khỏi danh sách"}
+
+@router.get("/{room_id}/members")
+async def get_room_members(
+    room_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    """
+    Lấy danh sách thành viên của một phòng chat.
+    """
+    # Lấy IDs thành viên
+    memberships = await db["room_members"].find({"room_id": room_id}).to_list(length=100)
+    user_ids = [m["user_id"] for m in memberships]
+    
+    # Lấy thông tin chi tiết người dùng
+    users = await db["users"].find({"id": {"$in": user_ids}}).to_list(length=100)
+    
+    # Kết hợp thông tin role từ membership
+    final_members = []
+    membership_map = {m["user_id"]: m for m in memberships}
+    
+    for user in users:
+        m = membership_map.get(user["id"], {})
+        final_members.append({
+            "id": user["id"],
+            "username": user["username"],
+            "full_name": user.get("full_name"),
+            "avatar_url": user.get("avatar_url"),
+            "is_online": user.get("is_online", False),
+            "role": m.get("role", "member"),
+            "joined_at": m.get("joined_at")
+        })
+        
+    return final_members

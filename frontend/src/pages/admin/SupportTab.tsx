@@ -1,7 +1,8 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { 
     Headset, Send, Bot, Clock, 
-    CheckCircle2, Search
+    CheckCircle2, Search, StickyNote,
+    MessageCircle, AlertCircle, CheckCircle
 } from 'lucide-react';
 import type { SupportTabProps } from './types';
 import { Avatar } from '../../components/common/Avatar';
@@ -9,9 +10,15 @@ import { formatRelativeTime } from '../../utils/time';
 
 export const SupportTab: React.FC<SupportTabProps> = ({
     conversations, selectedUser, onSelectUser,
-    messages, replyContent, onReplyChange, onSendReply, sendingReply
+    messages, replyContent, onReplyChange, onSendReply, sendingReply,
+    onStatusChange, onNoteChange
 }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
+    const [note, setNote] = useState(selectedUser?.internal_note || '');
+
+    useEffect(() => {
+        setNote(selectedUser?.internal_note || '');
+    }, [selectedUser]);
 
     useEffect(() => {
         if (scrollRef.current) {
@@ -20,6 +27,24 @@ export const SupportTab: React.FC<SupportTabProps> = ({
     }, [messages]);
 
     const activeConv = selectedUser;
+
+    const getStatusIcon = (status: string) => {
+        switch (status) {
+            case 'ai_processing': return <Bot size={14} className="text-indigo-500" />;
+            case 'waiting': return <AlertCircle size={14} className="text-amber-500" />;
+            case 'resolved': return <CheckCircle size={14} className="text-emerald-500" />;
+            default: return null;
+        }
+    };
+
+    const getStatusLabel = (status: string) => {
+        switch (status) {
+            case 'ai_processing': return 'AI';
+            case 'waiting': return 'Chờ Admin';
+            case 'resolved': return 'Đã xong';
+            default: return status;
+        }
+    };
 
     return (
         <div className="grid grid-cols-12 gap-6 h-[calc(100vh-280px)] animate-in fade-in duration-500">
@@ -71,6 +96,17 @@ export const SupportTab: React.FC<SupportTabProps> = ({
                                 <p className={`text-[11px] truncate mt-0.5 ${selectedUser?.user_id === conv.user_id ? 'text-indigo-100/80' : 'text-slate-500'}`}>
                                     {conv.last_message}
                                 </p>
+                                <div className="flex items-center space-x-2 mt-2">
+                                    <div className={`px-2 py-0.5 rounded-full text-[9px] font-bold flex items-center space-x-1 ${
+                                        selectedUser?.user_id === conv.user_id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                                    }`}>
+                                        {getStatusIcon(conv.status)}
+                                        <span>{getStatusLabel(conv.status)}</span>
+                                    </div>
+                                    {conv.internal_note && (
+                                        <StickyNote size={10} className={selectedUser?.user_id === conv.user_id ? 'text-indigo-200' : 'text-slate-300'} />
+                                    )}
+                                </div>
                             </div>
                         </button>
                     ))}
@@ -95,17 +131,50 @@ export const SupportTab: React.FC<SupportTabProps> = ({
                                 <Avatar name={activeConv?.username || ''} size="md" />
                                 <div>
                                     <h5 className="font-bold text-slate-900 leading-tight">{activeConv?.username}</h5>
-                                    <div className="flex items-center space-x-2">
-                                        <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
-                                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Đang kết nối</span>
+                                    <div className="flex items-center space-x-3">
+                                        <div className="flex items-center space-x-1">
+                                            <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                                            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Online</span>
+                                        </div>
+                                        <div className="flex items-center space-x-2 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
+                                            {getStatusIcon(activeConv?.status || 'ai_processing')}
+                                            <select 
+                                                value={activeConv?.status || 'ai_processing'}
+                                                onChange={(e) => onStatusChange(activeConv!.user_id, e.target.value)}
+                                                className="bg-transparent text-[10px] font-bold text-slate-600 outline-none uppercase tracking-tight cursor-pointer"
+                                            >
+                                                <option value="ai_processing">AI đang xử lý</option>
+                                                <option value="waiting">Chờ Admin</option>
+                                                <option value="resolved">Đã giải quyết</option>
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                             <div className="flex items-center space-x-2">
-                                <button className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all">
+                                <div className="hidden lg:flex items-center bg-slate-50 border border-slate-100 rounded-xl px-3 py-1.5 focus-within:ring-2 focus-within:ring-indigo-100 transition-all">
+                                    <StickyNote size={14} className="text-slate-400 mr-2" />
+                                    <input 
+                                        type="text" 
+                                        value={note}
+                                        onChange={(e) => setNote(e.target.value)}
+                                        onBlur={() => onNoteChange(activeConv!.user_id, note)}
+                                        placeholder="Ghi chú nội bộ..."
+                                        className="bg-transparent text-[11px] font-medium text-slate-600 outline-none w-40"
+                                    />
+                                </div>
+                                <button 
+                                    onClick={() => onStatusChange(activeConv!.user_id, 'resolved')}
+                                    className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
+                                    title="Đánh dấu hoàn thành"
+                                >
                                     <CheckCircle2 size={20} />
                                 </button>
-                                <button className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all">
+                                <button 
+                                    onClick={() => onStatusChange(activeConv!.user_id, 'ai_processing')}
+                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                                    title="Chuyển cho AI"
+                                >
                                     <Bot size={20} />
                                 </button>
                             </div>

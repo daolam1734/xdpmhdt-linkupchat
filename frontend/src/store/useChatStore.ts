@@ -15,6 +15,7 @@ interface ChatState {
     aiSuggestion: { content: string, messageId: string, isStreaming: boolean } | null;
     replyingTo: Message | null;
     editingMessage: Message | null;
+    forwardingMessage: Message | null;
     isMuted: boolean;
     searchResults: Message[];
     searchQuery: string;
@@ -23,9 +24,11 @@ interface ChatState {
     typingUsers: Record<string, Record<string, string>>; // room_id: { user_id: username }
     activeDropdownId: string | null; // ID of the currently open dropdown
     viewingUser: User | null; // Profile view state
+    roomMembers: User[]; // Members of the active room
 
-    fetchRooms: () => Promise<void>;
+    fetchRooms: (silent?: boolean) => Promise<void>;
     setActiveRoom: (room: Room | null) => Promise<void>;
+    fetchRoomMembers: (roomId: string) => Promise<void>;
     setViewingUser: (user: User | null) => void;
     connect: (token: string) => void;
     disconnect: () => void;
@@ -35,8 +38,11 @@ interface ChatState {
     deleteMessageForMe: (messageId: string) => void;
     pinMessage: (messageId: string) => void;
     addReaction: (messageId: string, emoji: string) => void;
+    reportMessage: (messageId: string, reason?: string) => void;
+    forwardMessage: (msg: Message, targetRoomId: string) => Promise<boolean>;
     setReplyingTo: (msg: Message | null) => void;
     setEditingMessage: (msg: Message | null) => void;
+    setForwardingMessage: (msg: Message | null) => void;
     addMessage: (msg: Message) => void;
     clearSuggestion: () => void;
     uploadFile: (file: File) => Promise<{ url: string, type: 'image' | 'file', filename: string }>;
@@ -80,6 +86,7 @@ export const useChatStore = create<ChatState>()(
         aiSuggestion: null,
         replyingTo: null,
         editingMessage: null,
+        forwardingMessage: null,
         isMuted: false,
         searchResults: [],
         searchQuery: '',
@@ -88,6 +95,7 @@ export const useChatStore = create<ChatState>()(
         typingUsers: {},
         activeDropdownId: null,
         viewingUser: null,
+        roomMembers: [],
 
         fetchRooms: async (silent = false) => {
             if (!silent) set({ isLoading: true });
@@ -110,10 +118,6 @@ export const useChatStore = create<ChatState>()(
                         set({ activeRoom: freshRoom });
                     }
                 }
-
-                if (sortedRooms.length > 0 && !get().activeRoom && !get().viewingUser && !silent) {
-                    get().setActiveRoom(sortedRooms[0]);
-                }
             } catch (error) {
                 console.error('Fetch rooms failed:', error);
             } finally {
@@ -123,7 +127,7 @@ export const useChatStore = create<ChatState>()(
 
         setActiveRoom: async (room: Room | null) => {
             if (!room) {
-                set({ activeRoom: null, messages: [] });
+                set({ activeRoom: null, messages: [], roomMembers: [] });
                 return;
             }
             // Xóa trạng thái chưa đọc khi vào phòng
@@ -132,9 +136,15 @@ export const useChatStore = create<ChatState>()(
                 messages: [],
                 isLoading: true,
                 viewingUser: null,
+                roomMembers: [],
                 rooms: state.rooms.map(r => r.id === room.id ? { ...r, has_unread: false, unread_count: 0 } : r)
             }));
-            get().sendReadReceipt(room.id);
+
+            // Tải thành viên song song với tin nhắn nếu là phòng nhóm hoặc public
+            if (room.type !== 'ai' && room.id !== 'ai' && room.id !== 'help') {
+                get().fetchRoomMembers(room.id);
+            }
+
             try {
                 const response = await chatService.getMessages(room.id);
                 const formattedMessages: Message[] = response.data.map((m: any) => ({
@@ -150,15 +160,28 @@ export const useChatStore = create<ChatState>()(
                     is_edited: m.is_edited,
                     is_recalled: m.is_recalled,
                     is_pinned: m.is_pinned,
+                    status: m.status,
                     reply_to_id: m.reply_to_id,
                     reply_to_content: m.reply_to_content,
                     suggestions: m.suggestions
                 }));
                 set({ messages: formattedMessages });
+                
+                // Gửi thông báo đã đọc sau khi đã tải xong tin nhắn để đảm bảo logic scroll hoạt động
+                get().sendReadReceipt(room.id);
             } catch (error) {
                 console.error('Fetch message history failed:', error);
             } finally {
                 set({ isLoading: false });
+            }
+        },
+
+        fetchRoomMembers: async (roomId: string) => {
+            try {
+                const response = await chatService.getRoomMembers(roomId);
+                set({ roomMembers: response.data });
+            } catch (error) {
+                console.error('Fetch room members failed:', error);
             }
         },
 
@@ -599,6 +622,26 @@ export const useChatStore = create<ChatState>()(
                             };
                         });
                         break;
+                    case 'support_status_update':
+                        set(state => {
+                            const updatedRooms = state.rooms.map(room => {
+                                if (room.id === data.room_id || room.id === 'help') {
+                                    return { ...room, support_status: data.status };
+                                }
+                                return room;
+                            });
+
+                            let updatedActiveRoom = state.activeRoom;
+                            if (updatedActiveRoom && (updatedActiveRoom.id === data.room_id || updatedActiveRoom.id === 'help')) {
+                                updatedActiveRoom = { ...updatedActiveRoom, support_status: data.status };
+                            }
+
+                            return { 
+                                rooms: updatedRooms,
+                                activeRoom: updatedActiveRoom
+                            };
+                        });
+                        break;
                     case 'typing':
                         set(state => {
                             const roomId = data.room_id || 'unknown';
@@ -685,6 +728,9 @@ export const useChatStore = create<ChatState>()(
                                 rooms: updatedRooms
                             };
                         });
+                        break;
+                    case 'report_success':
+                        toast.success(data.message || "Đã gửi báo cáo thành công");
                         break;
                 }
                 } catch (error) {
@@ -857,8 +903,37 @@ export const useChatStore = create<ChatState>()(
             }));
         },
 
+        reportMessage: (messageId: string, reason: string = "Phàn nàn chung") => {
+            const { socket, activeRoom } = get();
+            if (socket && socket.readyState === WebSocket.OPEN && activeRoom) {
+                socket.send(JSON.stringify({
+                    type: 'report',
+                    message_id: messageId,
+                    room_id: activeRoom.id,
+                    reason: reason
+                }));
+            }
+        },
+
+        forwardMessage: async (msg: Message, targetRoomId: string) => {
+            const { socket } = get();
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    type: 'message',
+                    content: msg.content,
+                    room_id: targetRoomId,
+                    file_url: msg.file_url,
+                    file_type: msg.file_type,
+                    is_forwarded: true
+                }));
+                return true;
+            }
+            return false;
+        },
+
         setReplyingTo: (msg: Message | null) => set({ replyingTo: msg }),
         setEditingMessage: (msg: Message | null) => set({ editingMessage: msg }),
+        setForwardingMessage: (msg: Message | null) => set({ forwardingMessage: msg }),
 
         uploadFile: async (file: File) => {
             const formData = new FormData();
@@ -982,9 +1057,7 @@ export const useChatStore = create<ChatState>()(
 {
     name: 'linkup-chat-storage',
     partialize: (state: ChatState) => ({ 
-        activeRoom: state.activeRoom, 
-        viewingUser: state.viewingUser,
-        isMuted: state.isMuted 
+        isMuted: state.isMuted
     }),
 }
 ));

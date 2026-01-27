@@ -17,6 +17,8 @@ class RoomBase(BaseModel):
     last_message_sender: Optional[str] = None
     last_message_at: Optional[datetime] = None
     blocked_by_other: bool = False
+    support_status: Optional[str] = None
+    support_note: Optional[str] = None
 
 class RoomCreate(RoomBase):
     pass

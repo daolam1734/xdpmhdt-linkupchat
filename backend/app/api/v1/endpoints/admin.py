@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from backend.app.db.session import get_db
 from backend.app.api.deps import get_current_user, get_current_active_superuser
 from backend.app.schemas.user import User as UserSchema
-from backend.app.schemas.admin import SystemConfigUpdate, SystemConfigResponse
+from backend.app.schemas.admin import SystemConfigUpdate, SystemConfigResponse, SupportStatusUpdate, SupportNoteUpdate
 from backend.app.core.config import settings
 
 router = APIRouter()
@@ -31,17 +31,35 @@ async def get_admin_config(
         return {
             "google_api_key": settings.GOOGLE_API_KEY,
             "openai_api_key": getattr(settings, "OPENAI_API_KEY", ""),
+            "ai_enabled": True,
+            "ai_enabled_help": True,
             "ai_auto_reply": True,
             "ai_sentiment_analysis": False,
-            "ai_system_prompt": "Bạn là LinkUp AI, trợ lý ảo thông minh được phát triển để giúp người dùng kết nối. Hãy trả lời thân thiện, chuyên nghiệp và ngắn gọn bằng Tiếng Việt."
+            "ai_limit_per_user": 50,
+            "ai_limit_per_group": 200,
+            "ai_system_prompt": "Bạn là LinkUp AI, trợ lý ảo thông minh được phát triển để giúp người dùng kết nối. Hãy trả lời thân thiện, chuyên nghiệp và ngắn gọn bằng Tiếng Việt.",
+            "max_message_length": 2000,
+            "max_file_size_mb": 20,
+            "file_upload_enabled": True,
+            "maintenance_mode": False,
+            "system_notifications_enabled": True
         }
     
     return {
         "google_api_key": config.get("google_api_key", settings.GOOGLE_API_KEY),
         "openai_api_key": config.get("openai_api_key", ""),
+        "ai_enabled": config.get("ai_enabled", True),
+        "ai_enabled_help": config.get("ai_enabled_help", True),
         "ai_auto_reply": config.get("ai_auto_reply", True),
         "ai_sentiment_analysis": config.get("ai_sentiment_analysis", False),
-        "ai_system_prompt": config.get("ai_system_prompt", "Bạn là LinkUp AI, trợ lý ảo thông minh được phát triển để giúp người dùng kết nối. Hãy trả lời thân thiện, chuyên nghiệp và ngắn gọn bằng Tiếng Việt.")
+        "ai_limit_per_user": config.get("ai_limit_per_user", 50),
+        "ai_limit_per_group": config.get("ai_limit_per_group", 200),
+        "ai_system_prompt": config.get("ai_system_prompt", "Bạn là LinkUp AI, trợ lý ảo thông minh được phát triển để giúp người dùng kết nối. Hãy trả lời thân thiện, chuyên nghiệp và ngắn gọn bằng Tiếng Việt."),
+        "max_message_length": config.get("max_message_length", 2000),
+        "max_file_size_mb": config.get("max_file_size_mb", 20),
+        "file_upload_enabled": config.get("file_upload_enabled", True),
+        "maintenance_mode": config.get("maintenance_mode", False),
+        "system_notifications_enabled": config.get("system_notifications_enabled", True)
     }
 
 @router.post("/config")
@@ -117,6 +135,79 @@ async def update_admin_config(
 
     return {"status": "success"}
 
+@router.get("/ai/stats")
+async def get_ai_stats(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """
+    Thống kê sử dụng AI theo MVP.
+    """
+    total_calls = await db["ai_usage"].count_documents({"status": "success"})
+    error_count = await db["ai_usage"].count_documents({"status": "error"})
+    
+    # Feedback 👍 / 👎
+    positive_feedback = await db["ai_feedback"].count_documents({"feedback": "like"})
+    negative_feedback = await db["ai_feedback"].count_documents({"feedback": "dislike"})
+    
+    # Accuracy ước tính (like / (like + dislike))
+    accuracy = 100.0
+    if (positive_feedback + negative_feedback) > 0:
+        accuracy = (positive_feedback / (positive_feedback + negative_feedback)) * 100
+        
+    return {
+        "total_calls": total_calls,
+        "error_count": error_count,
+        "positive_feedback": positive_feedback,
+        "negative_feedback": negative_feedback,
+        "accuracy": round(accuracy, 1),
+        "latency": 0.8 
+    }
+
+@router.get("/ai/restricted-entities")
+async def get_ai_restricted_entities(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """
+    Lấy danh sách người dùng và phòng bị hạn chế AI.
+    """
+    users = await db["users"].find({"ai_restricted": True}, {"id": 1}).to_list(length=1000)
+    rooms = await db["chat_rooms"].find({"ai_restricted": True}, {"id": 1}).to_list(length=1000)
+    
+    return {
+        "users": [u["id"] for u in users],
+        "rooms": [r["id"] for r in rooms]
+    }
+
+@router.post("/users/{user_id}/toggle-ai")
+async def toggle_user_ai(
+    user_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    user = await db["users"].find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    new_status = not user.get("ai_restricted", False)
+    await db["users"].update_one({"id": user_id}, {"$set": {"ai_restricted": new_status}})
+    return {"status": "success", "ai_restricted": new_status}
+
+@router.post("/rooms/{room_id}/toggle-ai")
+async def toggle_room_ai(
+    room_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    room = await db["chat_rooms"].find_one({"id": room_id})
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    
+    new_status = not room.get("ai_restricted", False)
+    await db["chat_rooms"].update_one({"id": room_id}, {"$set": {"ai_restricted": new_status}})
+    return {"status": "success", "ai_restricted": new_status}
+
 @router.get("/stats")
 async def get_system_stats(
     db: AsyncIOMotorDatabase = Depends(get_db),
@@ -142,11 +233,18 @@ async def get_system_stats(
     # Thống kê tin nhắn
     new_messages = await db["messages"].count_documents({"timestamp": {"$gte": yesterday}})
     
-    # Thống kê AI (Ước tính từ tin nhắn bot)
-    ai_calls_today = await db["messages"].count_documents({
-        "is_bot": True, 
+    # Thống kê AI (Dữ liệu thực tế từ collection mới)
+    ai_calls_today = await db["ai_usage"].count_documents({
+        "status": "success", 
         "timestamp": {"$gte": today}
     })
+    ai_usage_count = await db["ai_usage"].count_documents({"status": "success"})
+    ai_errors_count = await db["ai_usage"].count_documents({
+        "status": "error",
+        "timestamp": {"$gte": yesterday}
+    })
+    ai_feedback_positive = await db["ai_feedback"].count_documents({"feedback": "like"})
+    ai_feedback_negative = await db["ai_feedback"].count_documents({"feedback": "dislike"})
 
     # Thống kê báo cáo thực tế
     unhandled_reports = await db["reports"].count_documents({"status": "pending"}) if "reports" in await db.list_collection_names() else 0
@@ -165,32 +263,51 @@ async def get_system_stats(
     # Cảnh báo hệ thống thực tế dựa trên dữ liệu
     system_alerts = []
     
-    if latency_ms > 100:
+    # 1. Kiểm tra lẫy lỗi AI gần đây
+    ai_errors_count = await db["system_logs"].count_documents({
+        "type": "ai_error",
+        "timestamp": {"$gte": yesterday}
+    })
+    if ai_errors_count > 0:
+        system_alerts.append({
+            "type": "ai",
+            "level": "critical",
+            "message": f"Phát hiện {ai_errors_count} lỗi AI trong 24h qua. Hãy kiểm tra kết nối API.",
+            "timestamp": now.isoformat()
+        })
+
+    # 2. Kiểm tra Server Latency
+    if latency_ms > 500:
+        system_alerts.append({
+            "type": "server",
+            "level": "critical",
+            "message": f"Server phản hồi rất chậm ({round(latency_ms, 1)}ms). Quá tải hoặc DB bottleneck.",
+            "timestamp": now.isoformat()
+        })
+    elif latency_ms > 200:
         system_alerts.append({
             "type": "server",
             "level": "warning",
-            "message": f"Phản hồi DB chậm ({round(latency_ms, 1)}ms). Hãy kiểm tra chỉ mục (index).",
+            "message": f"Độ trễ hệ thống tăng cao ({round(latency_ms, 1)}ms).",
             "timestamp": now.isoformat()
         })
     
-    # 1. Kiểm tra lẫy lỗi AI gần đây (nếu có log)
-    # Ở đây ta giả định nếu số tin nhắn bot trong 1h qua = 0 mà có tin nhắn user tag @ai thì có thể AI lỗi
-    # Nhưng đơn giản hơn: Trả về các log hệ thống thực tế nếu có collection "logs"
+    # 3. Kiểm tra báo cáo vi phạm
+    if unhandled_reports > 0:
+        level = "critical" if unhandled_reports > 5 else "warning"
+        system_alerts.append({
+            "type": "security",
+            "level": level,
+            "message": f"Có {unhandled_reports} báo cáo vi phạm chưa xử lý.",
+            "timestamp": now.isoformat()
+        })
     
-    # Thêm các cảnh báo dựa trên ngưỡng (Thresholds)
-    if ai_calls_today > 500:
+    # 4. Ngưỡng AI Usage
+    if ai_calls_today > 1000:
         system_alerts.append({
             "type": "ai",
             "level": "warning",
-            "message": f"Lượt sử dụng AI cao ({ai_calls_today}). Kiểm tra hạn mức API.",
-            "timestamp": now.isoformat()
-        })
-    
-    if unhandled_reports > 5:
-        system_alerts.append({
-            "type": "security",
-            "level": "critical",
-            "message": f"Có {unhandled_reports} báo cáo vi phạm chưa xử lý!",
+            "message": f"Sử dụng AI vượt ngưỡng ( > 1000 call). Kiểm tra hạn mức Google GenAI.",
             "timestamp": now.isoformat()
         })
 
@@ -199,7 +316,7 @@ async def get_system_stats(
         system_alerts.append({
             "type": "server",
             "level": "info",
-            "message": "Các dịch vụ hệ thống đang hoạt động bình thường.",
+            "message": "Toàn bộ hệ thống đang hoạt động trong ngưỡng an toàn.",
             "timestamp": now.isoformat()
         })
 
@@ -289,7 +406,11 @@ async def get_system_stats(
         "new_users_24h": new_users_24h,
         "new_users_7d": new_users_7d,
         "pending_support": pending_support,
-        "ai_usage_count": ai_calls_today,
+        "ai_usage_count": ai_usage_count,
+        "ai_calls_today": ai_calls_today,
+        "ai_errors_count": ai_errors_count,
+        "ai_feedback_positive": ai_feedback_positive,
+        "ai_feedback_negative": ai_feedback_negative,
         "unhandled_reports": unhandled_reports,
         "db_size_mb": db_size_mb,
         "system_alerts": system_alerts,
@@ -416,6 +537,8 @@ async def get_support_conversations(
             continue
             
         user = await db["users"].find_one({"id": user_id})
+        thread = await db["support_threads"].find_one({"user_id": user_id})
+        
         if user:
             results.append({
                 "user_id": user_id,
@@ -424,10 +547,59 @@ async def get_support_conversations(
                 "last_message": conv["last_message"],
                 "timestamp": conv["timestamp"].isoformat() if isinstance(conv["timestamp"], datetime) else conv["timestamp"],
                 "is_online": user.get("is_online", False),
-                "unread_count": 0
+                "unread_count": 0,
+                "status": thread.get("status", "ai_processing") if thread else "ai_processing",
+                "internal_note": thread.get("internal_note", "") if thread else ""
             })
             
     return results
+
+@router.post("/support/thread/{user_id}/status")
+async def update_support_status(
+    user_id: str,
+    status_data: SupportStatusUpdate,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """Cập nhật trạng thái hỗ trợ cho user (AI processing / Waiting Admin / Resolved)"""
+    await db["support_threads"].update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "status": status_data.status,
+            "updated_at": datetime.now(timezone.utc),
+            "updated_by": current_user["id"]
+        }},
+        upsert=True
+    )
+
+    # Thông báo thời gian thực cho người dùng
+    from .ws.manager import manager
+    await manager.send_to_user(user_id, {
+        "type": "support_status_update",
+        "room_id": "help",
+        "status": status_data.status
+    })
+
+    return {"status": "success"}
+
+@router.post("/support/thread/{user_id}/note")
+async def update_support_note(
+    user_id: str,
+    note_data: SupportNoteUpdate,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """Cập nhật ghi chú nội bộ cho admin về user này"""
+    await db["support_threads"].update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "internal_note": note_data.note,
+            "updated_at": datetime.now(timezone.utc),
+            "updated_by": current_user["id"]
+        }},
+        upsert=True
+    )
+    return {"status": "success"}
 
 @router.get("/support/messages/{user_id}")
 async def get_support_messages(
@@ -489,8 +661,28 @@ async def support_reply(
     }
     await db["messages"].insert_one(db_msg)
     
-    # Broadcast tới user (nếu online)
+    # Cập nhật trạng thái thread hội thoại thành "Chờ Admin" (đang xử lý bởi con người)
+    # hoặc giữ nguyên nếu đang là waiting, nhưng cập nhật thời gian
+    new_status = "waiting"
+    await db["support_threads"].update_one(
+        {"user_id": reply.user_id},
+        {"$set": {
+            "status": new_status, 
+            "updated_at": ts,
+            "last_message": reply.content
+        }},
+        upsert=True
+    )
+
+    # Thông báo thời gian thực cho người dùng về sự thay đổi trạng thái
     from .ws.manager import manager
+    await manager.send_to_user(reply.user_id, {
+        "type": "support_status_update",
+        "room_id": "help",
+        "status": new_status
+    })
+
+    # Broadcast tới user (nếu online) tin nhắn mới
     metadata = {
         "type": "message",
         "id": msg_id,
@@ -756,3 +948,68 @@ async def delete_room_by_admin(
     await db["messages"].delete_many({"room_id": room_id})
     
     return {"status": "success", "message": f"Room {room_id} and its content deleted"}
+
+# --- REPORT MANAGEMENT ---
+
+@router.get("/reports")
+async def list_reports(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """Lấy danh sách các báo cáo vi phạm"""
+    cursor = db["reports"].find({}).sort("timestamp", -1)
+    reports = await cursor.to_list(length=100)
+    
+    # Serialize ObjectId
+    for r in reports:
+        if "_id" in r: r["_id"] = str(r["_id"])
+        if "timestamp" in r and isinstance(r["timestamp"], datetime):
+            r["timestamp"] = r["timestamp"].isoformat()
+            
+    return reports
+
+class ReportAction(BaseModel):
+    action: str  # warn, mute, kick, ban, dismiss
+    note: str | None = None
+
+@router.post("/reports/{report_id}/action")
+async def handle_report_action(
+    report_id: str,
+    action_data: ReportAction,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """Xử lý báo cáo vi phạm (Cảnh cáo, Mute, Ban, vv)"""
+    from bson import ObjectId
+    
+    report = await db["reports"].find_one({"_id": ObjectId(report_id)} if len(report_id) == 24 else {"id": report_id})
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+        
+    reported_user_id = report.get("reported_id")
+    
+    if action_data.action == "ban":
+        await db["users"].update_one({"id": reported_user_id}, {"$set": {"is_active": False}})
+        # Force logout
+        from .ws.manager import manager
+        await manager.force_disconnect(reported_user_id)
+    elif action_data.action == "warn":
+        # Trong thực tế sẽ gửi thông báo hệ thống cho user
+        pass
+    elif action_data.action == "mute":
+        # Cập nhật permissions hoặc một flag is_muted
+        await db["users"].update_one({"id": reported_user_id}, {"$set": {"is_muted": True}})
+        
+    # Cập nhật trạng thái báo cáo
+    await db["reports"].update_one(
+        {"_id": report["_id"]},
+        {"$set": {
+            "status": "resolved",
+            "action_taken": action_data.action,
+            "resolved_at": datetime.now(timezone.utc),
+            "resolved_by": current_user["username"],
+            "admin_note": action_data.note
+        }}
+    )
+    
+    return {"status": "success", "message": f"Action {action_data.action} applied"}

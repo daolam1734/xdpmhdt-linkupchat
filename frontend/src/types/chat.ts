@@ -46,6 +46,8 @@ export interface Room {
   blocked_by_other?: boolean;
   has_unread?: boolean;
   unread_count?: number;
+  support_status?: 'ai_processing' | 'waiting' | 'resolved';
+  support_note?: string;
 }
 
 export interface Message {
@@ -65,6 +67,7 @@ export interface Message {
   is_edited?: boolean;
   is_recalled?: boolean;
   is_pinned?: boolean;
+  is_forwarded?: boolean;
   reply_to_id?: string;
   reply_to_content?: string;
   reactions?: Record<string, string[]>;

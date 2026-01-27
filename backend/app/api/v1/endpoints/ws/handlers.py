@@ -151,6 +151,54 @@ async def handle_reaction(user_id: str, data: dict):
         "reactions": reactions
     })
 
+async def handle_report_message(user_id: str, data: dict):
+    msg_id = data.get("message_id")
+    room_id = data.get("room_id")
+    reason = data.get("reason", "Phàn nàn chung")
+    
+    if not msg_id or not room_id: return
+
+    # Fetch more details for better admin experience
+    reporter = await db["users"].find_one({"id": user_id})
+    message = await db["messages"].find_one({"id": msg_id})
+    
+    reported_user = None
+    if message:
+        reported_user = await db["users"].find_one({"id": message.get("sender_id")})
+
+    # Save to reports collection
+    report_data = {
+        "id": str(uuid.uuid4()),
+        "reporter_id": user_id,
+        "reporter_name": reporter.get("full_name") or reporter.get("username") if reporter else "Unknown",
+        "reported_id": message.get("sender_id") if message else "Unknown",
+        "reported_name": reported_user.get("full_name") or reported_user.get("username") if reported_user else "Unknown",
+        "message_id": msg_id,
+        "message_snippet": message.get("content")[:200] if message and message.get("content") else "No content",
+        "room_id": room_id,
+        "type": reason if reason in ['spam', 'harassment', 'inappropriate', 'other'] else 'other',
+        "content": reason, # Detailed reason
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": "pending"
+    }
+    
+    await db["reports"].insert_one(report_data)
+    
+    # Notify admins if any are online
+    await manager.broadcast_to_admins({
+        "type": "new_report",
+        "report_id": report_data["id"],
+        "message_id": msg_id,
+        "reported_name": report_data["reported_name"]
+    })
+    
+    # Send success response to reporter
+    await manager.send_to_user(user_id, {
+        "type": "report_success",
+        "message_id": msg_id,
+        "message": "Cảm ơn bạn! Báo cáo của bạn đã được gửi tới quản trị viên."
+    })
+
 async def handle_send_message(user_id: str, user, data: dict):
     room_id = data.get("room_id")
     content = data.get("content", "").strip()
@@ -159,8 +207,29 @@ async def handle_send_message(user_id: str, user, data: dict):
     reply_to_id = data.get("reply_to_id")
     receiver_id = data.get("receiver_id")
     shared_post = data.get("shared_post")
+    is_forwarded = data.get("is_forwarded", False)
     
     if not room_id or (not content and not file_url): return
+
+    from backend.app.core.admin_config import get_system_config
+    sys_config = await get_system_config(db)
+    
+    # Check Maintenance Mode
+    if sys_config.get("maintenance_mode", False) and not (user.get("is_superuser") or user.get("role") == "admin"):
+        await manager.send_to_user(user_id, {
+            "type": "error", 
+            "message": "Hệ thống đang bảo trì. Vui lòng quay lại sau."
+        })
+        return
+
+    # Check Max Message Length
+    max_len = sys_config.get("max_message_length", 2000)
+    if content and len(content) > max_len:
+        await manager.send_to_user(user_id, {
+            "type": "error", 
+            "message": f"Tin nhắn quá dài (Tối đa {max_len} ký tự)."
+        })
+        return
 
     now = datetime.now(timezone.utc)
 
@@ -230,6 +299,7 @@ async def handle_send_message(user_id: str, user, data: dict):
         "is_edited": False,
         "is_recalled": False,
         "is_pinned": False,
+        "is_forwarded": is_forwarded,
         "status": "sent",
         "reply_to_id": reply_to_id,
         "reply_to_content": reply_to_content,
@@ -289,21 +359,82 @@ async def handle_send_message(user_id: str, user, data: dict):
     from backend.app.core.admin_config import get_system_config
     sys_config = await get_system_config(db)
     ai_auto_reply_enabled = sys_config.get("ai_auto_reply", True)
+    ai_enabled_globally = sys_config.get("ai_enabled", True)
     
     should_ai_respond = False
-    # Only respond if it's an explicit call OR if auto-reply is enabled in AI rooms
-    if is_explicit_call:
-        should_ai_respond = True
-    elif is_ai_room and ai_auto_reply_enabled:
-        should_ai_respond = True
+    # Only respond if AI is enabled globally AND (it's an explicit call OR auto-reply is enabled in AI rooms)
+    if ai_enabled_globally:
+        if is_explicit_call:
+            should_ai_respond = True
+        elif is_ai_room and ai_auto_reply_enabled:
+            should_ai_respond = True
         
         if room_id == "help" and not user.get("is_superuser"):
             is_escalation_request = any(k in content_lower for k in ["gặp admin", "nhân viên hỗ trợ", "nói chuyện với người", "gặp nhân viên"])
             
+            # Check explicit support thread status
+            thread = await db["support_threads"].find_one({"user_id": user_id})
+            thread_status = thread.get("status") if thread else "ai_processing"
+
+            if not user.get("is_superuser") and thread_status == "resolved":
+                # Tự động mở lại hội thoại nếu người dùng nhắn tin sau khi đã giải quyết
+                new_status = "ai_processing"
+                await db["support_threads"].update_one(
+                    {"user_id": user_id},
+                    {"$set": {
+                        "status": new_status,
+                        "username": user.get("username"),
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }},
+                    upsert=True
+                )
+                # Thông báo thời gian thực
+                await manager.send_to_user(user_id, {
+                    "type": "support_status_update",
+                    "room_id": "help",
+                    "status": new_status
+                })
+                # Thông báo cho admin
+                await manager.broadcast_to_admins({
+                    "type": "support_status_update",
+                    "user_id": user_id,
+                    "username": user.get("username"),
+                    "status": new_status
+                })
+                thread_status = new_status
+
             if is_escalation_request:
                 should_ai_respond = True
+                # Automatically switch to waiting status if user asks for admin
+                new_status = "waiting"
+                await db["support_threads"].update_one(
+                    {"user_id": user_id},
+                    {"$set": {
+                        "status": new_status, 
+                        "username": user.get("username"),
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }},
+                    upsert=True
+                )
+                # Thông báo thời gian thực
+                await manager.send_to_user(user_id, {
+                    "type": "support_status_update",
+                    "room_id": "help",
+                    "status": new_status
+                })
+                # Thông báo cho admin
+                await manager.broadcast_to_admins({
+                    "type": "support_status_update",
+                    "user_id": user_id,
+                    "username": user.get("username"),
+                    "status": new_status
+                })
+                thread_status = new_status # Cập nhật local variable để check bên dưới
+            elif thread_status != "ai_processing" and not is_explicit_call:
+                # If thread is being handled by Admin or resolved, AI stays silent
+                should_ai_respond = False
             else:
-                # Optimized admin activity check
+                # Optimized admin activity check (fallback)
                 from datetime import timedelta
                 time_threshold = datetime.now(timezone.utc) - timedelta(minutes=5)
                 

@@ -28,11 +28,14 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [stats, setStats] = useState<Stats | null>(null);
     const [users, setUsers] = useState<User[]>([]);
     const [rooms, setRooms] = useState<Room[]>([]);
+    const [reports, setReports] = useState<Report[]>([]);
     const [config, setConfig] = useState<SystemConfig | null>(null);
+    const [restrictedUsers, setRestrictedUsers] = useState<string[]>([]);
+    const [restrictedRooms, setRestrictedRooms] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
-    const [filter, setFilter] = useState<'all' | 'admin' | 'user' | 'inactive'>('all');
+    const [filter, setFilter] = useState<'all' | 'active' | 'banned' | 'admin' | 'user'>('all');
     const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'rooms' | 'settings' | 'support' | 'reports' | 'ai_assistant'>('overview');
     const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
     const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -120,18 +123,53 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         }
     };
 
+    const handleUpdateSupportStatus = async (userId: string, status: string) => {
+        try {
+            await api.post(`/admin/support/thread/${userId}/status`, { status });
+            setSupportConversations(prev => prev.map(conv => 
+                conv.user_id === userId ? { ...conv, status: status as any } : conv
+            ));
+            if (selectedUser?.user_id === userId) {
+                setSelectedUser(prev => prev ? { ...prev, status: status as any } : null);
+            }
+            toast.success("Đã cập nhật trạng thái hỗ trợ");
+        } catch (error) {
+            toast.error("Lỗi khi cập nhật trạng thái");
+        }
+    };
+
+    const handleUpdateInternalNote = async (userId: string, note: string) => {
+        try {
+            await api.post(`/admin/support/thread/${userId}/note`, { note });
+            setSupportConversations(prev => prev.map(conv => 
+                conv.user_id === userId ? { ...conv, internal_note: note } : conv
+            ));
+            if (selectedUser?.user_id === userId) {
+                setSelectedUser(prev => prev ? { ...prev, internal_note: note } : null);
+            }
+            toast.success("Đã lưu ghi chú nội bộ");
+        } catch (error) {
+            toast.error("Lỗi khi lưu ghi chú");
+        }
+    };
+
     const fetchAdminData = useCallback(async (showToast = false) => {
         try {
-            const [statsRes, usersRes, roomsRes, configRes] = await Promise.all([
+            const [statsRes, usersRes, roomsRes, reportsRes, configRes, restrictedRes] = await Promise.all([
                 api.get('/admin/stats'),
                 api.get('/admin/users'),
                 api.get('/admin/rooms'),
-                api.get('/admin/config')
+                api.get('/admin/reports'),
+                api.get('/admin/config'),
+                api.get('/admin/ai/restricted-entities')
             ]);
             setStats(statsRes.data);
             setUsers(usersRes.data);
             setRooms(roomsRes.data);
+            setReports(reportsRes.data);
             setConfig(configRes.data);
+            setRestrictedUsers(restrictedRes.data.users);
+            setRestrictedRooms(restrictedRes.data.rooms);
             if (showToast) toast.success("Dữ liệu đã được làm mới");
         } catch (error) {
             console.error('Admin fetch error:', error);
@@ -141,6 +179,30 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             setLoading(false);
         }
     }, [onBack]);
+
+    const handleToggleUserAIRestriction = async (userId: string) => {
+        try {
+            await api.post(`/admin/users/${userId}/toggle-ai`);
+            setRestrictedUsers(prev => 
+                prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+            );
+            toast.success("Đã cập nhật hạn chế AI cho người dùng");
+        } catch (error) {
+            toast.error("Lỗi khi cập nhật hạn chế AI");
+        }
+    };
+
+    const handleToggleRoomAIRestriction = async (roomId: string) => {
+        try {
+            await api.post(`/admin/rooms/${roomId}/toggle-ai`);
+            setRestrictedRooms(prev => 
+                prev.includes(roomId) ? prev.filter(id => id !== roomId) : [...prev, roomId]
+            );
+            toast.success("Đã cập nhật hạn chế AI cho phòng chat");
+        } catch (error) {
+            toast.error("Lỗi khi cập nhật hạn chế AI");
+        }
+    };
 
     const handleDeleteRoom = async (roomId: string) => {
         if (roomId === 'general' || roomId === 'help') {
@@ -178,6 +240,17 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             fetchAdminData();
         } catch (error) {
             toast.error("Không thể dọn dẹp phòng");
+        }
+    };
+
+    const handleReportAction = async (reportId: string, action: string, note?: string) => {
+        try {
+            await api.post(`/admin/reports/${reportId}/action`, { action, note });
+            setReports(reports.map(r => (r.id === reportId || r._id === reportId) ? { ...r, status: 'resolved' as const, action_taken: action } : r));
+            toast.success("Đã xử lý báo cáo");
+            fetchAdminData();
+        } catch (error) {
+            toast.error("Lỗi khi xử lý báo cáo");
         }
     };
 
@@ -247,6 +320,36 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         }
     };
 
+    const handleToggleBan = async (userId: string) => {
+        try {
+            await api.post(`/admin/users/${userId}/toggle-active`);
+            setUsers(users.map(u => u.id === userId ? { ...u, is_active: !u.is_active } : u));
+            toast.success("Đã cập nhật trạng thái hoạt động");
+        } catch (error) {
+            toast.error("Lỗi khi cập nhật trạng thái");
+        }
+    };
+
+    const handleForceLogout = async (userId: string) => {
+        try {
+            await api.post(`/admin/users/${userId}/force-logout`);
+            setUsers(users.map(u => u.id === userId ? { ...u, is_online: false } : u));
+            toast.success("Đã yêu cầu đăng xuất bắt buộc");
+        } catch (error) {
+            toast.error("Lỗi khi force logout");
+        }
+    };
+
+    const handleResetStatus = async (userId: string) => {
+        try {
+            await api.post(`/admin/users/${userId}/reset-status`);
+            setUsers(users.map(u => u.id === userId ? { ...u, is_online: false } : u));
+            toast.success("Đã reset trạng thái online");
+        } catch (error) {
+            toast.error("Lỗi khi reset trạng thái");
+        }
+    };
+
     const handleSaveUserEdit = async (data: any) => {
         if (!editingUser) return;
         try {
@@ -288,6 +391,9 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         onAddUser={() => toast.error('Tính năng đang phát triển')}
                         onEditUser={setEditingUser}
                         onToggleRole={handleToggleRole}
+                        onToggleBan={handleToggleBan}
+                        onForceLogout={handleForceLogout}
+                        onResetStatus={handleResetStatus}
                         onDeleteUser={setDeletingUserId}
                         onExportCSV={handleExportCSV}
                     />
@@ -305,12 +411,24 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     />
                 );
             case 'reports':
-                return stats && <ReportsTab stats={stats} />;
+                return stats && (
+                    <ReportsTab 
+                        stats={stats} 
+                        reports={reports}
+                        onRefresh={() => fetchAdminData(true)}
+                        onAction={handleReportAction}
+                    />
+                );
             case 'ai_assistant':
-                return config && (
+                return config && stats && (
                     <AIAssistantTab 
                         config={config} 
+                        stats={stats}
                         saving={saving} 
+                        restrictedUsers={restrictedUsers}
+                        restrictedRooms={restrictedRooms}
+                        onToggleUserRestriction={handleToggleUserAIRestriction}
+                        onToggleRoomRestriction={handleToggleRoomAIRestriction}
                         onConfigChange={setConfig} 
                         onSave={handleSaveConfig} 
                     />
@@ -326,6 +444,8 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         onSelectUser={fetchSupportMessages}
                         onReplyChange={setReplyContent}
                         onSendReply={handleSendReply}
+                        onStatusChange={handleUpdateSupportStatus}
+                        onNoteChange={handleUpdateInternalNote}
                     />
                 );
             case 'settings':

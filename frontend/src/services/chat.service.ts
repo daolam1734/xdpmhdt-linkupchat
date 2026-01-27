@@ -14,4 +14,5 @@ export const chatService = {
     }),
     togglePin: (roomId: string) => api.post(`/rooms/${roomId}/pin`),
     deleteRoom: (roomId: string) => api.delete(`/rooms/${roomId}`),
+    getRoomMembers: (roomId: string) => api.get(`/rooms/${roomId}/members`),
 };

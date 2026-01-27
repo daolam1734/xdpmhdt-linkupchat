@@ -13,7 +13,8 @@ from .handlers import (
     handle_send_message,
     handle_pin_message,
     handle_read_receipt,
-    handle_reaction
+    handle_reaction,
+    handle_report_message
 )
 
 router = APIRouter()
@@ -76,6 +77,9 @@ async def websocket_endpoint(
                 
                 elif msg_type == "reaction":
                     await handle_reaction(user_id, data)
+                
+                elif msg_type == "report":
+                    await handle_report_message(user_id, data)
                     
                 elif msg_type == "typing":
                     await manager.broadcast_to_room(data.get("room_id"), {

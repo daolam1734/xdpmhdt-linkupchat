@@ -62,7 +62,7 @@ function App() {
         return <AuthPage onBack={() => setView('landing')} />;
     }
 
-    return <LandingPage onStart={() => setView('auth')} onLogin={() => setView('auth')} />;
+    return <LandingPage />;
   };
 
   return (

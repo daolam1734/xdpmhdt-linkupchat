@@ -74,6 +74,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             setAuthToken(access_token);
             set({ token: access_token });
             
+            // Clear chat state on login to ensure no room is auto-selected
+            localStorage.removeItem('linkup-chat-storage');
+            
             await get().fetchCurrentUser();
         } catch (error: any) {
             const msg = error.response?.data?.detail || 'Đăng nhập thất bại';
@@ -165,5 +168,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     logout: () => {
         setAuthToken(null);
         set({ token: null, currentUser: null });
+        // Clear active room in chat store
+        localStorage.removeItem('linkup-chat-storage');
     }
 }));

@@ -31,6 +31,18 @@ async def login(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Tài khoản này đã bị vô hiệu hóa bởi quản trị viên."
         )
+
+    # Check Maintenance Mode
+    from backend.app.core.admin_config import get_system_config
+    sys_config = await get_system_config(db)
+    if sys_config.get("maintenance_mode", False):
+        # Chỉ Admin mới được phép đăng nhập trong lúc bảo trì
+        is_staff = user.get("is_superuser") or user.get("role") == "admin"
+        if not is_staff:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Hệ thống đang bảo trì để nâng cấp. Vui lòng quay lại sau ít phút."
+            )
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return {

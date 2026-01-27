@@ -37,11 +37,34 @@ class ConnectionManager:
                 # Ghost conversion to ensure it's serializable
                 clean_message = json.loads(json.dumps(message, default=json_serializable))
                 
-                for connection in self.user_connections[user_id]:
+                # Copy list to avoid concurrent modification issues
+                active_connections = self.user_connections[user_id][:]
+                for connection in active_connections:
                     try:
-                        await connection.send_json(clean_message)
+                        # Check if connection is still alive before sending
+                        from starlette.websockets import WebSocketState
+                        if connection.client_state == WebSocketState.CONNECTED:
+                            await connection.send_json(clean_message)
+                        else:
+                            # If not connected, clean up
+                            if connection in self.user_connections[user_id]:
+                                self.user_connections[user_id].remove(connection)
                     except Exception as e:
-                        print(f"Error sending to connection for user {user_id}: {e}")
+                        # "Cannot call 'send' once a close message has been sent" is common during disconnect
+                        friendly_error = str(e)
+                        if "once a close message has been sent" in friendly_error:
+                            pass # Silent cleanup
+                        else:
+                            print(f"Error sending to connection for user {user_id}: {friendly_error}")
+                        
+                        # Cleanup the broken connection
+                        if connection in self.user_connections[user_id]:
+                            self.user_connections[user_id].remove(connection)
+
+                # Clean up empty user entries
+                if user_id in self.user_connections and not self.user_connections[user_id]:
+                    del self.user_connections[user_id]
+
             except Exception as e:
                 print(f"Error cleaning message for user {user_id}: {e}")
 
