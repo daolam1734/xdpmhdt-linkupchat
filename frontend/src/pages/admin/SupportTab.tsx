@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { 
     Headset, Send, Bot, Clock, 
     CheckCircle2, Search, StickyNote,
-    MessageCircle, AlertCircle, CheckCircle
+    AlertCircle, CheckCircle, Edit2, Trash2, X, Check
 } from 'lucide-react';
 import type { SupportTabProps } from './types';
 import { Avatar } from '../../components/common/Avatar';
@@ -11,10 +11,12 @@ import { formatRelativeTime } from '../../utils/time';
 export const SupportTab: React.FC<SupportTabProps> = ({
     conversations, selectedUser, onSelectUser,
     messages, replyContent, onReplyChange, onSendReply, sendingReply,
-    onStatusChange, onNoteChange
+    onStatusChange, onNoteChange, onUpdateMessage, onDeleteMessage
 }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
     const [note, setNote] = useState(selectedUser?.internal_note || '');
+    const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+    const [editContent, setEditContent] = useState('');
 
     useEffect(() => {
         setNote(selectedUser?.internal_note || '');
@@ -77,7 +79,7 @@ export const SupportTab: React.FC<SupportTabProps> = ({
                             }`}
                         >
                             <div className="relative flex-shrink-0">
-                                <Avatar name={conv.username} size="md" />
+                                <Avatar name={conv.full_name || conv.username} size="md" />
                                 {conv.unread_count > 0 && (
                                     <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white animate-bounce">
                                         {conv.unread_count}
@@ -87,7 +89,7 @@ export const SupportTab: React.FC<SupportTabProps> = ({
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between">
                                     <span className={`font-bold truncate ${selectedUser?.user_id === conv.user_id ? 'text-white' : 'text-slate-900'}`}>
-                                        {conv.username}
+                                        {conv.full_name || conv.username}
                                     </span>
                                     <span className={`text-[10px] flex-shrink-0 ${selectedUser?.user_id === conv.user_id ? 'text-indigo-200' : 'text-slate-400'}`}>
                                         {formatRelativeTime(conv.timestamp)}
@@ -128,9 +130,9 @@ export const SupportTab: React.FC<SupportTabProps> = ({
                     <>
                         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-white/80 backdrop-blur-md sticky top-0 z-10">
                             <div className="flex items-center space-x-4">
-                                <Avatar name={activeConv?.username || ''} size="md" />
+                                <Avatar name={activeConv?.full_name || activeConv?.username || ''} size="md" />
                                 <div>
-                                    <h5 className="font-bold text-slate-900 leading-tight">{activeConv?.username}</h5>
+                                    <h5 className="font-bold text-slate-900 leading-tight">{activeConv?.full_name || activeConv?.username}</h5>
                                     <div className="flex items-center space-x-3">
                                         <div className="flex items-center space-x-1">
                                             <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
@@ -186,8 +188,10 @@ export const SupportTab: React.FC<SupportTabProps> = ({
                         >
                             {messages.map((msg, idx) => {
                                 const isMe = !msg.is_bot && msg.sender_id !== selectedUser?.user_id;
+                                const isEditing = editingMsgId === msg.id;
+
                                 return (
-                                    <div key={msg.id || idx} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                    <div key={msg.id || idx} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group/msg`}>
                                         <div className={`flex max-w-[80%] items-end space-x-2 ${isMe ? 'flex-row-reverse space-x-reverse' : 'flex-row'}`}>
                                             <div className="flex-shrink-0 mb-1">
                                                 {msg.is_bot ? (
@@ -198,16 +202,74 @@ export const SupportTab: React.FC<SupportTabProps> = ({
                                                     <Avatar name={msg.sender_name} size="sm" />
                                                 )}
                                             </div>
-                                            <div>
+                                            <div className="relative">
                                                 <div className={`p-4 rounded-2xl shadow-sm text-sm leading-relaxed ${
                                                     isMe 
                                                     ? 'bg-indigo-600 text-white rounded-br-none' 
                                                     : msg.is_bot 
                                                         ? 'bg-indigo-50 text-indigo-900 border border-indigo-100 rounded-bl-none italic'
                                                         : 'bg-white text-slate-700 border border-slate-100 rounded-bl-none'
-                                                }`}>
-                                                    {msg.content}
+                                                } ${msg.is_recalled ? 'opacity-50 !italic !bg-slate-100 !text-slate-400 !border-slate-200' : ''}`}>
+                                                    {isEditing ? (
+                                                        <div className="flex flex-col space-y-2 min-w-[200px]">
+                                                            <textarea
+                                                                className="w-full p-2 bg-white/20 text-white border border-white/30 rounded focus:ring-0 outline-none text-sm resize-none"
+                                                                rows={2}
+                                                                value={editContent}
+                                                                onChange={(e) => setEditContent(e.target.value)}
+                                                                autoFocus
+                                                            />
+                                                            <div className="flex justify-end space-x-2">
+                                                                <button 
+                                                                    onClick={() => setEditingMsgId(null)}
+                                                                    className="p-1 hover:bg-white/10 rounded"
+                                                                >
+                                                                    <X size={14} />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => {
+                                                                        onUpdateMessage(msg.id, editContent);
+                                                                        setEditingMsgId(null);
+                                                                    }}
+                                                                    className="p-1 bg-white/20 hover:bg-white/30 rounded"
+                                                                >
+                                                                    <Check size={14} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            {msg.content}
+                                                            {msg.is_edited && !msg.is_recalled && (
+                                                                <span className="text-[9px] opacity-60 ml-1">(đã sửa)</span>
+                                                            )}
+                                                        </>
+                                                    )}
                                                 </div>
+
+                                                {/* Actions for Admin messages */}
+                                                {isMe && !msg.is_recalled && !isEditing && (
+                                                    <div className="absolute top-0 -left-12 opacity-0 group-hover/msg:opacity-100 transition-opacity flex flex-col space-y-1">
+                                                        <button 
+                                                            onClick={() => {
+                                                                setEditingMsgId(msg.id);
+                                                                setEditContent(msg.content);
+                                                            }}
+                                                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-all"
+                                                            title="Sửa tin nhắn"
+                                                        >
+                                                            <Edit2 size={12} />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => onDeleteMessage(msg.id)}
+                                                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded-lg transition-all"
+                                                            title="Thu hồi tin nhắn"
+                                                        >
+                                                            <Trash2 size={12} />
+                                                        </button>
+                                                    </div>
+                                                )}
+
                                                 <div className={`text-[10px] text-slate-400 mt-1.5 flex items-center space-x-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
                                                     <Clock size={10} />
                                                     <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>

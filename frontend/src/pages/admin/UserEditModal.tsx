@@ -48,16 +48,17 @@ export const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onS
                 <div className="p-8 space-y-6 max-h-[80vh] overflow-y-auto custom-scrollbar">
                     {/* Header profile info */}
                     <div className="flex items-center space-x-6 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <Avatar name={user.username} size="xl" />
+                        <Avatar name={user.full_name || user.username} size="xl" />
                         <div className="flex-1">
                             <div className="flex items-center space-x-3 mb-1">
-                                <span className="text-lg font-bold text-slate-900">{user.username}</span>
+                                <span className="text-lg font-bold text-slate-900">{user.full_name || user.username}</span>
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${user.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                                     {user.is_active ? 'ACTIVE' : 'BANNED'}
                                 </span>
                             </div>
                             <div className="flex flex-col space-y-1">
-                                <span className="text-xs text-slate-500 font-medium">Tham gia: {new Date(user.created_at).toLocaleDateString()}</span>
+                                <span className="text-xs text-slate-500 font-medium">@{user.username}</span>
+                                <span className="text-xs text-slate-500 font-medium italic">Tham gia: {new Date(user.created_at).toLocaleDateString()}</span>
                                 <span className="text-xs text-slate-500 font-medium flex items-center space-x-1">
                                     <div className={`w-2 h-2 rounded-full ${user.is_online ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
                                     <span>{user.is_online ? 'Đang online' : 'Offline'}</span>

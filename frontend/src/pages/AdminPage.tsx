@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useChatStore } from '../store/useChatStore';
+import { useViewStore } from '../store/useViewStore';
 import api from '../services/api';
 import { 
     Users, MessageSquare, ShieldAlert, 
@@ -36,7 +37,7 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [saving, setSaving] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filter, setFilter] = useState<'all' | 'active' | 'banned' | 'admin' | 'user'>('all');
-    const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'rooms' | 'settings' | 'support' | 'reports' | 'ai_assistant'>('overview');
+    const { adminTab: activeTab, setAdminTab: setActiveTab } = useViewStore();
     const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const [showGoogleKey, setShowGoogleKey] = useState(false);
@@ -73,6 +74,15 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             }];
                         });
                     }
+                }
+
+                // Xử lý cập nhật/thu hồi tin nhắn real-time
+                if (data.type === 'edit_message' && data.room_id === 'help') {
+                    setSupportMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, content: data.content, is_edited: true } : m));
+                }
+                
+                if (data.type === 'recall_message' && data.room_id === 'help') {
+                    setSupportMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, is_recalled: true, content: "Tin nhắn đã được thu hồi bởi Admin" } : m));
                 }
             } catch (error) {}
         };
@@ -150,6 +160,27 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             toast.success("Đã lưu ghi chú nội bộ");
         } catch (error) {
             toast.error("Lỗi khi lưu ghi chú");
+        }
+    };
+
+    const handleUpdateSupportMessage = async (messageId: string, content: string) => {
+        try {
+            await api.put(`/admin/support/messages/${messageId}`, { content });
+            setSupportMessages(prev => prev.map(m => m.id === messageId ? { ...m, content, is_edited: true } : m));
+            toast.success("Đã cập nhật tin nhắn");
+        } catch (error) {
+            toast.error("Lỗi khi cập nhật tin nhắn");
+        }
+    };
+
+    const handleDeleteSupportMessage = async (messageId: string) => {
+        if (!window.confirm("Bạn có chắc chắn muốn thu hồi tin nhắn này?")) return;
+        try {
+            await api.delete(`/admin/support/messages/${messageId}`);
+            setSupportMessages(prev => prev.map(m => m.id === messageId ? { ...m, is_recalled: true, content: "Tin nhắn đã được thu hồi bởi Admin" } : m));
+            toast.success("Đã thu hồi tin nhắn");
+        } catch (error) {
+            toast.error("Lỗi khi thu hồi tin nhắn");
         }
     };
 
@@ -446,6 +477,8 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         onSendReply={handleSendReply}
                         onStatusChange={handleUpdateSupportStatus}
                         onNoteChange={handleUpdateInternalNote}
+                        onUpdateMessage={handleUpdateSupportMessage}
+                        onDeleteMessage={handleDeleteSupportMessage}
                     />
                 );
             case 'settings':
@@ -514,19 +547,19 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <main className="flex-1 overflow-y-auto">
                 <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between sticky top-0 z-10">
                     <h2 className="text-[18px] font-bold text-slate-900">
-                        {activeTab === 'overview' ? 'Bảng điều khiển hệ thống' : 
-                         activeTab === 'users' ? 'Quản lý người dùng' : 
-                         activeTab === 'rooms' ? 'Quản lý phòng chat' :
-                         activeTab === 'reports' ? 'Báo cáo & Thống kê' :
-                         activeTab === 'ai_assistant' ? 'Cấu hình AI Assistant' :
-                         activeTab === 'settings' ? 'Cấu hình hệ thống' : 'Hỗ trợ khách hàng'}
+                        {activeTab === 'overview' ? 'System Dashboard' : 
+                         activeTab === 'users' ? 'User Management' : 
+                         activeTab === 'rooms' ? 'Conversations Management' :
+                         activeTab === 'reports' ? 'Reports & Statistics' :
+                         activeTab === 'ai_assistant' ? 'AI Assistant configuration' :
+                         activeTab === 'settings' ? 'System configuration' : 'Help & Support'}
                     </h2>
                     <div className="flex items-center space-x-4">
                         <div className="text-right">
-                            <p className="text-sm font-bold text-slate-900 leading-none">{currentUser?.username}</p>
-                            <p className="text-xs text-indigo-600 font-semibold uppercase tracking-wider mt-1">Administrator</p>
+                            <p className="text-sm font-bold text-slate-900 leading-none">{currentUser?.full_name || currentUser?.username}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">@{currentUser?.username}</p>
                         </div>
-                        <Avatar name={currentUser?.username || ''} size="md" />
+                        <Avatar name={currentUser?.full_name || currentUser?.username || ''} size="md" />
                     </div>
                 </header>
 

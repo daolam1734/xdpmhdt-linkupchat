@@ -65,6 +65,7 @@ export interface SystemConfig {
 export interface SupportConversation {
     user_id: string;
     username: string;
+    full_name?: string;
     last_message: string;
     timestamp: string;
     unread_count: number;
@@ -79,6 +80,8 @@ export interface SupportMessage {
     sender_name: string;
     is_bot: boolean;
     timestamp: string;
+    is_edited?: boolean;
+    is_recalled?: boolean;
 }
 
 export interface Room {
@@ -168,6 +171,8 @@ export interface SupportTabProps {
     onSendReply: () => void;
     onStatusChange: (userId: string, status: string) => void;
     onNoteChange: (userId: string, note: string) => void;
+    onUpdateMessage: (messageId: string, content: string) => void;
+    onDeleteMessage: (messageId: string) => void;
 }
 
 export interface ReportsTabProps {

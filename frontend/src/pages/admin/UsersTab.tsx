@@ -109,14 +109,13 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                                     <td className="px-6 py-4">
                                         <div className="flex items-center space-x-4">
                                             <div className="relative flex-shrink-0">
-                                                <Avatar name={u.username} size="lg" />
+                                                <Avatar name={u.full_name || u.username} size="lg" />
                                                 <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 border-2 border-white rounded-full ${u.is_online ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                                             </div>
                                             <div className="min-w-0">
-                                                <div className="font-bold text-slate-800 truncate">{u.username}</div>
+                                                <div className="font-bold text-slate-800 truncate">{u.full_name || u.username}</div>
                                                 <div className="text-[10px] font-mono text-slate-400 flex items-center mt-0.5">
-                                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded mr-1 lowercase italic opacity-70">uid:</span>
-                                                    <span className="truncate">{u.id}</span>
+                                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded mr-1 lowercase italic opacity-70">@{u.username}</span>
                                                 </div>
                                             </div>
                                         </div>
