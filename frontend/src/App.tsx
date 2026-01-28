@@ -11,14 +11,18 @@ import { Toaster } from 'react-hot-toast'
 
 function App() {
   const { token, currentUser, isLoading: authLoading, initialize } = useAuthStore();
-  const { fetchRooms, connect, disconnect } = useChatStore();
-  const { currentView, setView } = useViewStore();
+  const { fetchRooms, connect, disconnect, isHydrated: chatHydrated } = useChatStore();
+  const { currentView, setView, isHydrated: viewHydrated } = useViewStore();
+
+  const isFullyHydrated = chatHydrated && viewHydrated;
 
   useEffect(() => {
     initialize();
   }, [initialize]);
 
   useEffect(() => {
+    if (!isFullyHydrated) return;
+
     if (token && currentUser) {
         fetchRooms();
         connect(token);
@@ -26,13 +30,15 @@ function App() {
         if (currentView === 'landing' || currentView === 'auth') {
             setView('chat');
         }
-    } else {
-        disconnect();
+    } else if (!token && !authLoading) {
+        // Khi logout thực sự (không có token và không đang load), reset trạng thái
+        useChatStore.getState().reset();
+        useViewStore.getState().reset();
     }
-  }, [token, currentUser, fetchRooms, connect, disconnect, setView, currentView]);
+  }, [token, currentUser, authLoading, fetchRooms, connect, setView, currentView, isFullyHydrated]);
 
   const renderContent = () => {
-    if (authLoading && !currentUser) {
+    if ((authLoading && !currentUser) || !isFullyHydrated) {
       return (
           <div className="min-h-screen bg-white flex flex-col items-center justify-center">
               <div className="w-16 h-16 bg-blue-500 rounded-2xl flex items-center justify-center mb-4 animate-pulse">
