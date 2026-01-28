@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, ThumbsUp, X, Reply, Edit2, Paperclip, Loader2, Sparkles, Settings, FileIcon, FileText, Image as ImageIcon } from 'lucide-react';
+import { Send, ThumbsUp, X, Reply, Edit2, Paperclip, Loader2, FileIcon, FileText, Image as ImageIcon } from 'lucide-react';
 import { useChatStore } from '../../store/useChatStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 
 interface ChatInputProps {
-  onSendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }, receiverId?: string) => void;
+  onSendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file', name?: string }, receiverId?: string) => void;
   isLoading?: boolean;
 }
 
@@ -14,7 +14,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
   const [text, setText] = useState('');
   const [uploading, setUploading] = useState(false);
   const [pendingFile, setPendingFile] = useState<{ url: string, type: 'image' | 'file', filename: string } | null>(null);
-  const [showAiSettings, setShowAiSettings] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -31,11 +30,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
   } = useChatStore();
   const { currentUser, updateProfile, unblockUser: unblockUserStore } = useAuthStore();
 
-  const isAiRoom = activeRoom?.type === 'ai' || activeRoom?.id === 'ai' || activeRoom?.id === 'help';
-  const isHelpRoom = activeRoom?.id === 'help';
-  const isGeneralRoom = activeRoom?.id === 'general';
-  const isStaff = currentUser?.is_superuser || currentUser?.role === 'admin';
-  
   // Real-time block detection using both activeRoom state and currentUser block lists
   const isBlockedByMe = activeRoom?.type === 'direct' && activeRoom.other_user_id && 
     currentUser?.blocked_users?.includes(activeRoom.other_user_id);
@@ -66,21 +60,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
         setText('');
     }
   }, [editingMessage]);
-
-  const handleUpdatePreference = async (key: string, value: string) => {
-    try {
-        const currentPrefs = currentUser?.ai_preferences || {};
-        await updateProfile({
-            ai_preferences: {
-                ...currentPrefs,
-                [key]: value
-            }
-        });
-        toast.success("Đã lưu sở thích AI");
-    } catch (e) {
-        toast.error("Không thể lưu cấu hình");
-    }
-  };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
@@ -139,7 +118,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
       onSendMessage(
         text, 
         replyingTo?.id, 
-        pendingFile ? { url: pendingFile.url, type: pendingFile.type } : undefined, 
+        pendingFile ? { url: pendingFile.url, type: pendingFile.type, name: pendingFile.filename } : undefined, 
         receiverId
       );
       
@@ -152,11 +131,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
         // Gửi Like nếu không có text và không có file
         onSendMessage('👍');
     }
-  };
-
-  const insertAiPrefix = () => {
-      setText(prev => prev.startsWith('@ai ') ? prev : `@ai ${prev}`);
-      textareaRef.current?.focus();
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -236,153 +210,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
             </div>
         ) : (
             <>
-                {/* AI Modes Bar */}
-                {!isGeneralRoom && (
-                    <div className={clsx(
-                        "flex flex-col mb-2 rounded-xl transition-all duration-200",
-                        isAiRoom ? "bg-purple-50/50" : "bg-gray-50/50 border border-gray-100/50"
-                    )}>
-                        <div className="flex items-center space-x-2 px-3 py-1.5 overflow-x-auto no-scrollbar scroll-smooth">
-                            {isAiRoom && (
-                                <>
-                                    <button
-                                        onClick={() => setShowAiSettings(!showAiSettings)}
-                                        className={clsx(
-                                            "flex-shrink-0 p-1.5 rounded-full transition-all duration-200 border",
-                                            showAiSettings ? "bg-purple-600 text-white border-purple-600" : "bg-white text-purple-600 border-purple-100 hover:bg-purple-100"
-                                        )}
-                                        title="Cấu hình AI Memory"
-                                    >
-                                        <Settings size={14} />
-                                    </button>
-                                    <div className="w-[1px] h-4 bg-purple-200 mx-1 flex-shrink-0" />
-                                </>
-                            )}
-                            {isHelpRoom && !isStaff && (
-                                <>
-                                    {[
-                                        { label: 'Gặp Admin', icon: '👨‍💼', prompt: 'Mình muốn gặp admin để hỗ trợ trực tiếp.' },
-                                        { label: 'Lỗi tài khoản', icon: '🔐', prompt: 'Tài khoản của mình đang gặp sự cố đăng nhập/bảo mật.' },
-                                        { label: 'Góp ý', icon: '📝', prompt: 'Mình có một vài góp ý cho ứng dụng: ' },
-                                    ].map((item) => (
-                                        <button
-                                            key={item.label}
-                                            onClick={() => {
-                                                setText(item.prompt);
-                                                textareaRef.current?.focus();
-                                            }}
-                                            className="flex-shrink-0 flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold transition-all duration-200 border shadow-sm bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-100 active:scale-95"
-                                        >
-                                            <span>{item.icon}</span>
-                                            <span>{item.label}</span>
-                                        </button>
-                                    ))}
-                                    <div className="w-[1px] h-4 bg-indigo-200 mx-1 flex-shrink-0" />
-                                </>
-                            )}
-                            {[
-                                { label: 'Giải thích', icon: '💡', prefix: 'Giải thích giúp mình: ' },
-                                { label: 'Viết lại', icon: '📝', prefix: 'Viết lại tin nhắn này hay hơn: ' },
-                                { label: 'Tóm tắt', icon: '📊', prefix: 'Tóm tắt nội dung sau: ' },
-                                { label: 'Dịch', icon: '🌐', prefix: 'Dịch sang tiếng Việt: ' },
-                            ].map((mode) => (
-                                <button
-                                    key={mode.label}
-                                    onClick={() => {
-                                        const isPrivateOrAi = activeRoom?.type === 'direct' || activeRoom?.type === 'ai' || activeRoom?.id === 'ai' || activeRoom?.id === 'help';
-                                        const finalPrefix = isPrivateOrAi ? mode.prefix : `@ai ${mode.prefix}`;
-                                        setText(finalPrefix);
-                                        textareaRef.current?.focus();
-                                    }}
-                                    className={clsx(
-                                        "flex-shrink-0 flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold transition-all duration-200 border shadow-sm whitespace-nowrap active:scale-95",
-                                        isAiRoom 
-                                            ? "bg-white hover:bg-purple-100 text-purple-700 border-purple-100" 
-                                            : "bg-white hover:bg-blue-50 text-blue-600 border-blue-100"
-                                    )}
-                                >
-                                    <span>{mode.icon}</span>
-                                    <span>{mode.label}</span>
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* AI Settings dropdown refinement */}
-                        {isAiRoom && showAiSettings && (
-                            <div className="px-4 py-3 bg-white/80 backdrop-blur-md border-t border-purple-50 animate-in fade-in slide-in-from-top-2 duration-300 rounded-b-xl">
-                                <div className="flex flex-col space-y-3">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-[11px] font-bold text-purple-400 uppercase tracking-widest">AI Memory Preference</span>
-                                        <button onClick={() => setShowAiSettings(false)} className="p-1 hover:bg-purple-50 rounded-full transition-colors"><X size={14} className="text-gray-400" /></button>
-                                    </div>
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase">Phong cách</label>
-                                            <div className="flex bg-gray-100/50 rounded-lg p-0.5">
-                                                {['short', 'balanced', 'detailed'].map((s) => (
-                                                    <button
-                                                        key={s}
-                                                        onClick={() => handleUpdatePreference('preferred_style', s)}
-                                                        className={clsx(
-                                                            "flex-1 py-1 text-[10px] rounded-md transition-all duration-200",
-                                                            currentUser?.ai_preferences?.preferred_style === s 
-                                                                ? "bg-white text-purple-600 shadow-sm font-bold" 
-                                                                : "text-gray-500 hover:text-gray-700"
-                                                        )}
-                                                    >
-                                                        {s === 'short' ? 'Ngắn' : s === 'balanced' ? 'Vừa' : 'Chi tiết'}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase">Hỏi về Code</label>
-                                            <div className="flex bg-gray-100/50 rounded-lg p-0.5">
-                                                {['low', 'medium', 'high'].map((v) => (
-                                                    <button
-                                                        key={v}
-                                                        onClick={() => handleUpdatePreference('coding_frequency', v)}
-                                                        className={clsx(
-                                                            "flex-1 py-1 text-[10px] rounded-md transition-all duration-200",
-                                                            currentUser?.ai_preferences?.coding_frequency === v 
-                                                                ? "bg-white text-purple-600 shadow-sm font-bold" 
-                                                                : "text-gray-500 hover:text-gray-700"
-                                                        )}
-                                                    >
-                                                        {v === 'low' ? 'Ít' : v === 'medium' ? 'Vừa' : 'Nhiều'}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-bold text-gray-400 uppercase">Ngôn ngữ</label>
-                                            <div className="flex bg-gray-100/50 rounded-lg p-0.5">
-                                                {['vi', 'en'].map((l) => (
-                                                    <button
-                                                        key={l}
-                                                        onClick={() => handleUpdatePreference('language', l)}
-                                                        className={clsx(
-                                                            "flex-1 py-1 text-[10px] rounded-md transition-all duration-200",
-                                                            currentUser?.ai_preferences?.language === l 
-                                                                ? "bg-white text-purple-600 shadow-sm font-bold" 
-                                                                : "text-gray-500 hover:text-gray-700"
-                                                        )}
-                                                    >
-                                                        {l === 'vi' ? 'Tiếng Việt' : 'English'}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
                 {/* Pending File Preview ABOVE input row */}
                 {pendingFile && (
                     <div className="mx-2 mb-2 p-2 bg-gray-50 rounded-xl border border-gray-100 flex items-center group animate-in slide-in-from-bottom-2 duration-200">
@@ -490,21 +317,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
                         />
 
                         <div className="pb-1 transition-all duration-200">
-                            {!isAiRoom && (
-                                <button 
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        insertAiPrefix();
-                                    }}
-                                    className={clsx(
-                                        "p-2 rounded-full transition-all duration-200",
-                                        text.startsWith('@ai') ? 'text-purple-600 bg-purple-50' : 'text-gray-400 hover:bg-gray-200'
-                                    )}
-                                    title="Hỏi AI với @ai"
-                                >
-                                    <Sparkles size={20} fill={text.startsWith('@ai') ? "currentColor" : "none"} />
-                                </button>
-                            )}
                         </div>
                     </div>
 
