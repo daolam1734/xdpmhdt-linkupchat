@@ -60,32 +60,21 @@ async def get_rooms(
                 {"receiver_id": current_user["id"]}
             ]
         elif room["id"] == "help":
-            # Nếu không phải admin, chỉ thấy thread của chính mình
-            if not is_admin:
-                msg_query["$or"] = [
-                    {"sender_id": current_user["id"]},
-                    {"receiver_id": current_user["id"]}
-                ]
-                # Thêm metadata status cho người dùng
-                thread = await db["support_threads"].find_one({"user_id": current_user["id"]})
-                if thread:
-                    room["support_status"] = thread.get("status")
-                    room["support_note"] = thread.get("internal_note") # Người dùng có thể thấy note nếu cần (hoặc chỉ status)
-            else:
-                # Nếu là admin, đổi tên phòng để phân biệt
-                room["name"] = "Hỗ trợ khách hàng (Admin)"
-                # msg_query giữ nguyên để admin thấy mọi tin nhắn
-                
-                # Tính toán unread_count cho admin: Tin nhắn từ User/Bot chưa được Admin phản hồi
-                # Logic đơn giản: Nếu tin nhắn cuối cùng không phải của một admin
-                last_msg_check = await db["messages"].find({"room_id": "help"}).sort("timestamp", -1).limit(1).to_list(1)
-                if last_msg_check:
-                    last_sender_id = last_msg_check[0].get("sender_id")
-                    last_sender = await db["users"].find_one({"id": last_sender_id})
-                    is_last_sender_admin = last_sender and (last_sender.get("is_superuser") or last_sender.get("role") == "admin")
-                    if not is_last_sender_admin:
-                        room["has_unread"] = True
-                        room["unread_count"] = 1 # Simplified indicator
+            # LinkUp: Cả admin và user đều chỉ thấy thread cá nhân của mình trong ChatPage để đồng bộ trải nghiệm
+            # Thread cá nhân: sender_id là mình và không có người nhận cụ thể (gửi cho hệ thống/AI)
+            # HOẶC mình là người nhận (hệ thống/admin khác phản hồi mình)
+            msg_query["$or"] = [
+                {"sender_id": current_user["id"], "receiver_id": None},
+                {"receiver_id": current_user["id"]}
+            ]
+            
+            room["name"] = "Help & Support"
+            
+            # Thêm metadata status cho người dùng hiện tại
+            thread = await db["support_threads"].find_one({"user_id": current_user["id"]})
+            if thread:
+                room["support_status"] = thread.get("status")
+                room["support_note"] = thread.get("internal_note")
 
         last_msg = await db["messages"].find(msg_query).sort("timestamp", -1).limit(1).to_list(length=1)
         
@@ -122,7 +111,7 @@ async def get_rooms(
             if other_member:
                 other_user = await db["users"].find_one({"id": other_member["user_id"]})
                 if other_user:
-                    other_name = other_user["username"]
+                    other_name = other_user.get("full_name") or other_user["username"]
                     other_avatar = other_user.get("avatar_url")
                     
                     # Kiểm tra bạn bè: Chỉ hiện online nếu đã kết bạn

@@ -86,6 +86,7 @@ async def websocket_endpoint(
                         "type": "typing",
                         "user_id": user_id,
                         "username": user.get("username"),
+                        "full_name": user.get("full_name"),
                         "room_id": data.get("room_id"),
                         "status": data.get("status", True)
                     })

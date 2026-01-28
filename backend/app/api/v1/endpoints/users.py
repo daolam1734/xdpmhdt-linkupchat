@@ -15,6 +15,7 @@ router = APIRouter()
 class UserOut(BaseModel):
     id: str
     username: str
+    full_name: Optional[str] = None
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
     is_friend: Optional[bool] = False
@@ -42,7 +43,10 @@ async def search_users(
     Tìm kiếm người dùng theo username và kiểm tra quan hệ bạn bè.
     """
     mongo_query = {
-        "username": {"$regex": re.escape(q), "$options": "i"},
+        "$or": [
+            {"username": {"$regex": re.escape(q), "$options": "i"}},
+            {"full_name": {"$regex": re.escape(q), "$options": "i"}}
+        ],
         "is_superuser": False,  # Không tìm thấy Admin trong tìm kiếm thông thường
         "id": {
             "$ne": current_user["id"],

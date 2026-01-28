@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from backend.app.db.session import get_db
 from backend.app.api.deps import get_current_user, get_current_active_superuser
 from backend.app.schemas.user import User as UserSchema
-from backend.app.schemas.admin import SystemConfigUpdate, SystemConfigResponse, SupportStatusUpdate, SupportNoteUpdate
+from backend.app.schemas.admin import SystemConfigUpdate, SystemConfigResponse, SupportStatusUpdate, SupportNoteUpdate, SupportMessageUpdate
 from backend.app.core.config import settings
 
 router = APIRouter()
@@ -543,6 +543,7 @@ async def get_support_conversations(
             results.append({
                 "user_id": user_id,
                 "username": user.get("username"),
+                "full_name": user.get("full_name"),
                 "avatar_url": user.get("avatar") or user.get("avatar_url"),
                 "last_message": conv["last_message"],
                 "timestamp": conv["timestamp"].isoformat() if isinstance(conv["timestamp"], datetime) else conv["timestamp"],
@@ -698,6 +699,74 @@ async def support_reply(
     
     # Broadcast tới các Admin khác đang online để đồng bộ dashboard
     admins = await db["users"].find({"is_superuser": True, "is_online": True}).to_list(length=50)
+    for admin in admins:
+        if admin["id"] != current_user["id"]:
+            await manager.send_to_user(admin["id"], metadata)
+
+    return {"status": "success", "message_id": msg_id}
+
+@router.put("/support/messages/{message_id}")
+async def update_support_message(
+    message_id: str,
+    update_data: SupportMessageUpdate,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """Admin cập nhật (sửa) tin nhắn hỗ trợ"""
+    result = await db["messages"].update_one(
+        {"id": message_id, "room_id": "help"},
+        {"$set": {
+            "content": update_data.content,
+            "is_edited": True,
+            "edited_at": datetime.now(timezone.utc)
+        }}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Tin nhắn không tồn tại hoặc không thể sửa")
+        
+    # Thông báo real-time qua websocket cho người dùng (nếu đang online)
+    msg = await db["messages"].find_one({"id": message_id})
+    if msg:
+        target_user_id = msg.get("receiver_id") or msg.get("sender_id")
+        if target_user_id:
+            from .ws.manager import manager
+            await manager.send_to_user(target_user_id, {
+                "type": "edit_message",
+                "message_id": message_id,
+                "room_id": "help",
+                "content": update_data.content
+            })
+
+    return {"status": "success"}
+
+@router.delete("/support/messages/{message_id}")
+async def delete_support_message(
+    message_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_active_superuser)
+):
+    """Admin xóa tin nhắn hỗ trợ"""
+    msg = await db["messages"].find_one({"id": message_id, "room_id": "help"})
+    if not msg:
+        raise HTTPException(status_code=404, detail="Tin nhắn không tồn tại")
+        
+    target_user_id = msg.get("receiver_id") or msg.get("sender_id")
+    
+    await db["messages"].update_one(
+        {"id": message_id},
+        {"$set": {"is_recalled": True, "content": "Tin nhắn đã được thu hồi bởi Admin"}}
+    )
+    
+    if target_user_id:
+        from .ws.manager import manager
+        await manager.send_to_user(target_user_id, {
+            "type": "recall_message",
+            "message_id": message_id,
+            "room_id": "help"
+        })
+
+    return {"status": "success"}
     for admin in admins:
         await manager.send_to_user(admin["id"], metadata)
 

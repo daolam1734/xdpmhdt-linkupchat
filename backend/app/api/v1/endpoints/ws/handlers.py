@@ -203,6 +203,7 @@ async def handle_send_message(user_id: str, user, data: dict):
     room_id = data.get("room_id")
     content = data.get("content", "").strip()
     file_url = data.get("file_url")
+    file_name = data.get("file_name")
     file_type = data.get("file_type")
     reply_to_id = data.get("reply_to_id")
     receiver_id = data.get("receiver_id")
@@ -289,10 +290,11 @@ async def handle_send_message(user_id: str, user, data: dict):
         "id": message_id,
         "room_id": room_id,
         "sender_id": user_id,
-        "sender_name": user.get("username"),
+        "sender_name": user.get("full_name") or user.get("username"),
         "sender_avatar": user.get("avatar") or user.get("avatar_url"),
         "content": content,
         "file_url": file_url,
+        "file_name": file_name,
         "file_type": file_type,
         "timestamp": now,
         "is_bot": False,
