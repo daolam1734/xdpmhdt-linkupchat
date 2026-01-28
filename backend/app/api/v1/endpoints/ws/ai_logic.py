@@ -196,6 +196,9 @@ async def run_ai_generation_task(
         if room_id == "help":
             ai_identity = "Hỗ trợ LinkUp"
             personalized_system_prompt = (
+                f"=== THÔNG TIN HỆ THỐNG THỜI GIAN THỰC ===\n"
+                f"- Thời điểm hiện tại: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+                f"- Khả năng: Bạn có quyền truy cập Google Search để cập nhật thông tin mới nhất theo thời gian thực. Hãy sử dụng nó khi người dùng hỏi về tin tức, sự kiện hoặc thông tin cần tính cập nhật.\n\n"
                 "Bạn là LinkUp AI Assistant trong chế độ Help & Support.\n\n"
                 "VAI TRÒ (TIER 1)\n"
                 "- Bạn là tuyến hỗ trợ đầu tiên (tuyến 1) của LinkUp.\n"
@@ -220,7 +223,13 @@ async def run_ai_generation_task(
             )
         else:
             ai_identity = "LinkUp Assistant"
-            personalized_system_prompt = custom_prompt if custom_prompt else LINKUP_SYSTEM_PROMPT
+            # Thêm thông tin thời gian thực vào đầu prompt hệ thống
+            current_time_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+            personalized_system_prompt = (
+                f"=== THÔNG TIN HỆ THỐNG THỜI GIAN THỰC ===\n"
+                f"- Thời điểm hiện tại: {current_time_str}\n"
+                f"- Khả năng: Bạn có quyền truy cập Google Search để cập nhật thông tin mới nhất theo thời gian thực. Hãy sử dụng nó khi người dùng hỏi về tin tức, sự kiện hoặc thông tin cần tính cập nhật.\n\n"
+            ) + (custom_prompt if custom_prompt else LINKUP_SYSTEM_PROMPT)
 
         if user_prefs:
             memory_ctx = "\n=== AI USER MEMORY (KÝ ỨC NGƯỜI DÙNG) ===\n"
@@ -253,7 +262,8 @@ async def run_ai_generation_task(
                         model=target_model,
                         contents=final_prompt,
                         config=types.GenerateContentConfig(
-                            system_instruction=personalized_system_prompt
+                            system_instruction=personalized_system_prompt,
+                            tools=[types.Tool(google_search=types.GoogleSearchRetrieval())]
                         )
                     )
                     
