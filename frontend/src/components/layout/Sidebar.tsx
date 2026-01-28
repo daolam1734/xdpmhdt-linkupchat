@@ -312,14 +312,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 >
                                     <div className="flex items-center space-x-3 cursor-pointer overflow-hidden flex-1" onClick={() => setViewingUser(user as any)}>
                                         <Avatar 
-                                            name={user.username} 
+                                            name={user.full_name || user.username} 
                                             url={user.avatar_url} 
                                             size="lg" 
                                             isOnline={user.is_online}
                                         />
                                         <div className="flex flex-col">
                                             <div className="flex items-center">
-                                                <span className="font-semibold text-[15px] text-black">{user.username}</span>
+                                                <span className="font-semibold text-[15px] text-black">{user.full_name || user.username}</span>
                                             </div>
                                             <span className="text-[12px] text-gray-500">
                                                 {user.is_online ? 'Đang hoạt động' : ''}
@@ -380,14 +380,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         >
                                             <div className="relative p-0.5 rounded-full ring-2 ring-transparent group-hover:ring-blue-100 transition-all">
                                                 <Avatar 
-                                                    name={friend.username} 
+                                                    name={friend.full_name || friend.username} 
                                                     url={friend.avatar_url} 
                                                     size="lg" 
                                                     isOnline={friend.is_online}
                                                 />
                                             </div>
                                             <span className="text-[11px] font-medium text-gray-600 max-w-[64px] truncate group-hover:text-blue-600">
-                                                {friend.username.split(' ')[0]}
+                                                {(friend.full_name || friend.username).split(' ')[0]}
                                             </span>
                                         </div>
                                     ))}
@@ -414,9 +414,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     {pendingRequests.slice(0, 3).map((request) => (
                                         <div key={request.request_id} className="flex items-center justify-between p-2.5 bg-red-50/50 rounded-2xl border border-red-100/50 group mx-1 shadow-sm">
                                             <div className="flex items-center space-x-2.5 overflow-hidden">
-                                                <Avatar name={request.username} url={request.avatar_url} size="md" />
+                                                <Avatar name={request.full_name || request.username} url={request.avatar_url} size="md" />
                                                 <div className="flex flex-col truncate">
-                                                    <span className="text-[13.5px] font-bold text-gray-900 truncate tracking-tight">{request.username}</span>
+                                                    <span className="text-[13.5px] font-bold text-gray-900 truncate tracking-tight">{request.full_name || request.username}</span>
                                                     <span className="text-[10px] text-gray-500 font-medium italic">Muốn kết nối với bạn</span>
                                                 </div>
                                             </div>
@@ -460,7 +460,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             ? (room.id === 'ai' ? "bg-purple-50 border-purple-100 shadow-sm" : "bg-blue-50 border-blue-100 shadow-sm") 
                                             : "hover:bg-gray-50 active:scale-[0.98]"
                                     )}
-                                    onClick={() => onSelectRoom(room)}
+                                    onClick={() => {
+                                        onSelectRoom(room);
+                                        setViewingUser(null);
+                                    }}
                                 >
                                     <div className="relative">
                                         <Avatar 
@@ -519,6 +522,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             onClick={() => {
                                                 onSelectRoom?.(room);
                                                 setActiveDropdown(null);
+                                                setViewingUser(null);
                                             }}
                                             className={clsx(
                                                 "w-full flex items-center px-3 py-3 rounded-2xl transition-all group relative cursor-pointer border border-transparent mx-1",
@@ -571,7 +575,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                             <span className="flex items-center truncate">
                                                                 {room.last_message_sender && (
                                                                     <span className="font-bold mr-1 shrink-0">
-                                                                        {room.last_message_sender === currentUser?.username ? 'Bạn: ' : (room.type !== 'direct' ? `${room.last_message_sender}: ` : '')}
+                                                                        {(room.last_message_sender === (currentUser?.full_name || currentUser?.username)) ? 'Bạn: ' : (room.type !== 'direct' ? `${room.last_message_sender}: ` : '')}
                                                                     </span>
                                                                 )}
                                                                 <span className="truncate">
@@ -695,7 +699,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onClick={() => setViewingUser(currentUser as any)}
                     className="flex flex-col items-center text-gray-400 hover:text-gray-600 cursor-pointer"
                 >
-                    <Avatar name={currentUser?.username || 'User'} url={currentUser?.avatar_url} size="sm" />
+                    <Avatar name={currentUser?.full_name || currentUser?.username || 'User'} url={currentUser?.avatar_url} size="sm" />
                     <span className="text-[10px] font-medium mt-1">Cá nhân</span>
                 </div>
             </div>

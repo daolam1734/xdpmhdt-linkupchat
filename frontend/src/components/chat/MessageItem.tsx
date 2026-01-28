@@ -1,7 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import type { Message } from '../../types/chat';
 import { Avatar } from '../common/Avatar';
-import { useViewStore } from '../../store/useViewStore';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import ReactMarkdown from 'react-markdown';
@@ -29,17 +28,15 @@ import {
     Copy,
     Trash2,
     Smile,
-    ExternalLink,
     Sparkles,
     Check,
     CheckCheck,
     CircleDashed,
-    X,
-    Info,
+    Share2,
+    Maximize2,
     ThumbsUp,
     ThumbsDown,
-    Share2,
-    Save
+    Info
 } from 'lucide-react';
 import api from '../../services/api';
 
@@ -56,7 +53,8 @@ const getFileIcon = (fileName: string) => {
   return <FileIcon size={28} className="text-gray-500" />;
 };
 
-const getFileName = (url: string) => {
+const getFileName = (url: string, fileName?: string) => {
+  if (fileName) return fileName;
   const decoded = decodeURIComponent(url);
   return decoded.split('/').pop() || 'Tệp đính kèm';
 };
@@ -75,10 +73,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     showAvatar = true, 
     showName = true,
     isFirst = true,
-    isLast = true,
-    isLatest = false
+    isLast = true
 }) => {
-  const { currentUser } = useAuthStore();
+  const { currentUser, token } = useAuthStore();
   const { 
     setReplyingTo, 
     setEditingMessage, 
@@ -89,11 +86,20 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     addReaction, 
     activeDropdownId, 
     setActiveDropdown,
-    setViewingUser,
-    reportMessage 
+    setViewingUser
   } = useChatStore();
-  const { setView } = useViewStore();
   
+  const getAuthenticatedUrl = (url?: string) => {
+    if (!url) return '';
+    // If it's a relative URL and it's a secure download endpoint, append token
+    if (url.startsWith('/api/v1/files/download/') && token) {
+        return `${BASE_URL}${url}${url.includes('?') ? '&' : '?'}token=${token}`;
+    }
+    // If it's already a full URL or other static path
+    if (url.startsWith('http')) return url;
+    return `${BASE_URL}${url}`;
+  };
+
   const handleFeedback = async (type: 'like' | 'dislike') => {
     try {
         await api.post('/chat/ai/feedback', {
@@ -149,8 +155,8 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const isMe = useMemo(() => {
       if (message.isBot) return false;
       if (!currentUser) return false;
-      return message.senderId === currentUser.id || message.senderName === currentUser.username;
-  }, [message.senderId, message.senderName, currentUser, message.isBot]);
+      return message.senderId === currentUser.id;
+  }, [message.senderId, currentUser, message.isBot]);
 
   // Messenger Style Corner Radii
   const bubbleRadius = useMemo(() => {
@@ -173,33 +179,40 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     <div
       id={`msg-${message.id}`}
       className={twMerge(
-        'flex w-full animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out items-end space-x-2 px-4 scroll-mt-20',
+        'flex w-full animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out items-end space-x-2 px-4 scroll-mt-20 relative select-text',
+        activeDropdownId?.includes(message.id) ? 'z-[45]' : 'z-0',
         isMe ? 'flex-row-reverse space-x-reverse' : 'flex-row',
         isLast ? 'mb-4' : 'mb-[2px]'
       )}
     >
-      <div className="w-9 shrink-0 flex flex-col items-center">
-        {!isMe && showAvatar && (
-            <div 
-                className="cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={async () => {
-                    if (message.isBot) return;
-                    try {
-                        const profile = await getUserProfile(message.senderId);
-                        setViewingUser(profile as any);
-                    } catch (error) {
-                        toast.error("Không thể tải thông tin người dùng");
-                    }
-                }}
-            >
-                <Avatar 
-                    name={message.senderName} 
-                    url={message.isBot ? undefined : message.senderAvatar} 
-                    size="sm" 
-                />
-            </div>
-        )}
-      </div>
+      {!isMe && (
+        <div className="w-9 shrink-0 flex flex-col items-center">
+            {showAvatar && (
+                <div 
+                    className={clsx(
+                        "transition-opacity",
+                        !message.isBot && "cursor-pointer hover:opacity-80"
+                    )}
+                    onClick={async () => {
+                        if (message.isBot) return;
+                        try {
+                            const profile = await getUserProfile(message.senderId);
+                            setViewingUser(profile as any);
+                        } catch (error) {
+                            toast.error("Không thể tải thông tin người dùng");
+                        }
+                    }}
+                >
+                    <Avatar 
+                        name={message.isBot ? "LinkUp AI" : message.senderName} 
+                        url={message.isBot ? message.senderAvatar : message.senderAvatar} 
+                        isBot={message.isBot}
+                        size="sm" 
+                    />
+                </div>
+            )}
+        </div>
+      )}
       
       <div className={clsx(
           "flex flex-col max-w-[75%] group",
@@ -219,12 +232,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 }}
             >
                 <span className="text-[11px] text-gray-500 font-bold group-hover/name:text-blue-500 transition-colors">
-                    {message.senderName}
+                    {message.isBot ? "LinkUp AI" : message.senderName}
                 </span>
                 {message.isBot && (
-                    <span className="px-1.5 py-0.5 bg-gradient-to-r from-purple-600 to-blue-600 text-[9px] text-white rounded-full font-black uppercase tracking-tighter shadow-sm">
-                        AI
-                    </span>
+                    <div className="flex items-center space-x-1 px-2 py-0.5 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full shadow-md ml-1">
+                        <Sparkles size={8} className="text-white fill-white" />
+                        <span className="text-[9px] text-white font-black uppercase tracking-wider">Assistant</span>
+                    </div>
                 )}
             </div>
         )}
@@ -243,7 +257,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         )}
 
         <div className={clsx(
-            "flex items-center z-10",
+            "flex items-center",
             isMe ? "flex-row-reverse" : "flex-row"
         )}>
             <div
@@ -255,7 +269,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     : message.isBot 
                         ? 'bg-white text-slate-800 border-2 border-blue-100 shadow-xl shadow-blue-500/10 ring-1 ring-blue-500/5'
                         : 'bg-[#F0F2F5] text-black',
-                message.is_recalled && 'bg-gray-100 text-gray-400 italic border border-gray-200'
+                message.is_recalled && 'bg-gray-100 text-gray-400 italic border border-gray-200',
+                // Viền màu xanh đặc trưng cho tin nhắn chỉ chứa ảnh hoặc tệp
+                message.file_url && !message.content && !message.is_recalled && 'bg-white border-2 border-blue-500 p-[2px] shadow-lg ring-1 ring-blue-500/10'
                 )}
             >
                 {message.is_forwarded && (
@@ -307,32 +323,36 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                             >
                                 {message.content}
                             </ReactMarkdown>
-                            <div className="mt-3 pt-2 border-t border-purple-100/50 flex flex-col gap-2">
-                                <div className="flex items-center space-x-1.5 opacity-50">
-                                    <Info size={10} className="text-purple-400" />
-                                    <span className="text-[9px] font-medium text-purple-600 italic">
-                                        LinkUp AI có thể đưa ra thông tin không chính xác. Hãy kiểm tra các phản hồi quan trọng.
-                                    </span>
+                            
+                            {/* Phản hồi cho tin nhắn AI */}
+                            {message.isBot && (
+                                <div className="mt-3 pt-2 border-t border-purple-100/30 flex flex-col gap-2">
+                                    <div className="flex items-center space-x-1.5 opacity-60">
+                                        <Info size={10} className="text-purple-400" />
+                                        <span className="text-[9px] font-medium text-purple-600 italic">
+                                            LinkUp AI có thể đưa ra thông tin chưa chính xác.
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button 
+                                            onClick={() => handleFeedback('like')}
+                                            className="p-1 hover:bg-emerald-50 rounded text-slate-400 hover:text-emerald-500 transition-colors flex items-center gap-1"
+                                            title="Hữu ích"
+                                        >
+                                            <ThumbsUp size={12} />
+                                            <span className="text-[10px] font-bold">Hữu ích</span>
+                                        </button>
+                                        <button 
+                                            onClick={() => handleFeedback('dislike')}
+                                            className="p-1 hover:bg-rose-50 rounded text-slate-400 hover:text-rose-500 transition-colors flex items-center gap-1"
+                                            title="Không hữu ích"
+                                        >
+                                            <ThumbsDown size={12} />
+                                            <span className="text-[10px] font-bold">Không hữu ích</span>
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button 
-                                        onClick={() => handleFeedback('like')}
-                                        className="p-1 hover:bg-emerald-50 rounded text-slate-400 hover:text-emerald-500 transition-colors flex items-center gap-1"
-                                        title="Hữu ích"
-                                    >
-                                        <ThumbsUp size={12} />
-                                        <span className="text-[10px] font-bold">Hữu ích</span>
-                                    </button>
-                                    <button 
-                                        onClick={() => handleFeedback('dislike')}
-                                        className="p-1 hover:bg-rose-50 rounded text-slate-400 hover:text-rose-500 transition-colors flex items-center gap-1"
-                                        title="Không hữu ích"
-                                    >
-                                        <ThumbsDown size={12} />
-                                        <span className="text-[10px] font-bold">Không hữu ích</span>
-                                    </button>
-                                </div>
-                            </div>
+                            )}
                         </div>
                     ) : (
                         <div className="tracking-tight">
@@ -343,49 +363,35 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                                 )}>
                                     {message.file_type === 'image' ? (
                                         <div className="relative group/img cursor-pointer max-w-[320px] max-h-[400px] w-fit rounded-lg overflow-hidden"
-                                             onClick={() => window.open(`${BASE_URL}${message.file_url}`, '_blank')}>
+                                             onClick={() => window.open(getAuthenticatedUrl(message.file_url), '_blank')}>
                                             <img 
-                                                src={`${BASE_URL}${message.file_url}`} 
-                                                alt="Đính kèm" 
-                                                className="max-w-full max-h-full h-auto object-cover rounded-lg border border-black/5 hover:brightness-95 transition-all"
+                                                src={getAuthenticatedUrl(message.file_url)} 
+                                                alt={getFileName(message.file_url || '', message.file_name)} 
+                                                className="max-w-full max-h-full h-auto object-cover rounded-lg border border-black/[0.04] hover:brightness-95 transition-all"
                                             />
                                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
                                         </div>
                                     ) : (
                                         <div className={clsx(
-                                            "flex items-center space-x-3 p-3 rounded-xl border transition-all",
-                                            isMe 
-                                                ? "bg-white/10 border-white/20 hover:bg-white/20" 
-                                                : "bg-white border-gray-100 hover:border-blue-200 shadow-sm text-gray-800 font-normal"
+                                            "flex items-center space-x-3 p-3 rounded-xl transition-all",
+                                            isMe ? "bg-blue-50/50" : "bg-gray-50/50"
                                         )}>
-                                            <div className={clsx(
-                                                "p-2 rounded-lg flex items-center justify-center",
-                                                isMe ? "bg-white/20" : "bg-gray-50"
-                                            )}>
-                                                {getFileIcon(getFileName(message.file_url || ''))}
+                                            <div className="p-2 rounded-lg flex items-center justify-center bg-white shadow-sm">
+                                                {getFileIcon(getFileName(message.file_url || '', message.file_name))}
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <p className={clsx(
-                                                    "text-sm font-semibold truncate",
-                                                    isMe ? "text-white" : "text-gray-800"
-                                                )}>
-                                                    {getFileName(message.file_url || '')}
+                                                <p className="text-sm font-semibold truncate text-gray-800">
+                                                    {getFileName(message.file_url || '', message.file_name)}
                                                 </p>
-                                                <p className={clsx(
-                                                    "text-[11px] font-medium",
-                                                    isMe ? "text-blue-50" : "text-gray-500"
-                                                )}>
+                                                <p className="text-[11px] font-medium text-gray-500">
                                                     Tải về để xem chi tiết
                                                 </p>
                                             </div>
                                             <a 
-                                                href={`${BASE_URL}${message.file_url}`} 
+                                                href={getAuthenticatedUrl(message.file_url)} 
                                                 target="_blank" 
                                                 download
-                                                className={clsx(
-                                                    "p-2 rounded-full transition-all hover:scale-110",
-                                                    isMe ? "hover:bg-white/20 text-white" : "hover:bg-gray-100 text-gray-500"
-                                                )}
+                                                className="p-2 rounded-full transition-all hover:scale-110 hover:bg-gray-100 text-gray-500"
                                             >
                                                 <Download size={20} />
                                             </a>
@@ -396,7 +402,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                             {message.shared_post && (
                                 <div className={clsx(
                                     "mb-3 w-full max-w-[300px] overflow-hidden rounded-xl border transition-all hover:shadow-lg",
-                                    isMe ? "bg-white/10 border-white/20" : "bg-gray-50 border-gray-200 shadow-sm"
+                                    isMe ? "bg-white/10 border-white/10" : "bg-gray-50 border-gray-100 shadow-sm"
                                 )}>
                                     <div className="p-3">
                                         <div className="flex items-center space-x-2 mb-2">
@@ -450,47 +456,35 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     )}
                 </div>
 
-                {/* Reaction Display (Messenger Style) */}
+                {/* Reaction Display (Messenger Style Capsule) */}
                 {message.reactions && Object.keys(message.reactions).length > 0 && (
                     <div className={clsx(
-                        "absolute -bottom-2 z-10 flex flex-wrap gap-0.5",
-                        isMe ? "right-2 flex-row-reverse" : "left-2"
+                        "absolute -bottom-2 z-30 flex",
+                        isMe ? "right-2" : "left-2"
                     )}>
-                        <div className="bg-white px-1.5 py-0.5 rounded-full shadow-md border border-gray-100 flex items-center space-x-1 animate-in zoom-in-50 duration-200">
-                            {Object.entries(message.reactions).map(([emoji, users]) => (
-                                <div key={emoji} className="flex items-center">
-                                    <span className="text-[14px] leading-none">{emoji}</span>
-                                    {users.length > 1 && (
-                                        <span className="text-[10px] font-bold text-gray-400 ml-0.5">{users.length}</span>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                // Optional: View details of who reacted
+                            }}
+                            className="bg-white/95 backdrop-blur-md hover:bg-white px-2 py-0.5 rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.08)] border border-gray-100 flex items-center space-x-1 transition-all active:scale-95 group"
+                        >
+                            <div className="flex -space-x-1">
+                                {Object.keys(message.reactions).slice(0, 3).map((emoji) => (
+                                    <span key={emoji} className="text-[14px] drop-shadow-sm group-hover:scale-110 transition-transform">
+                                        {emoji}
+                                    </span>
+                                ))}
+                            </div>
+                            {Object.values(message.reactions).reduce((acc, users) => acc + (users?.length || 0), 0) > 0 && (
+                                <span className="text-[11px] font-bold text-slate-500 pl-0.5">
+                                    {Object.values(message.reactions).reduce((acc, users) => acc + (users?.length || 0), 0)}
+                                </span>
+                            )}
+                        </button>
                     </div>
                 )}
 
-                {isMe && !message.is_recalled && (
-                    <div className={clsx(
-                        "flex items-center mt-1 mb-1",
-                        isMe ? "justify-end mr-1" : "justify-start ml-1"
-                    )}>
-                        {message.status === 'sending' && (
-                            <CircleDashed size={10} className="text-gray-400 animate-spin" />
-                        )}
-                        {message.status === 'sent' && (
-                            <Check size={10} className="text-gray-400 border border-gray-400 rounded-full p-[1px]" />
-                        )}
-                        {message.status === 'delivered' && (
-                            <CheckCheck size={12} className="text-gray-400" />
-                        )}
-                        {message.status === 'seen' && (
-                            <div className="w-3 h-3 rounded-full bg-blue-500 flex items-center justify-center shadow-sm">
-                                <CheckCheck size={8} className="text-white" />
-                            </div>
-                        )}
-                    </div>
-                )}
-              
                 {message.isStreaming && (
                     <div className="flex items-center space-x-1 mt-2 mb-1 ml-1 opacity-60">
                         <div className="w-1 h-1 bg-purple-500 rounded-full animate-pulse" />
@@ -499,11 +493,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 )}
             </div>
 
+
+
             {/* Quick Actions (Zalo/Telegram Refined) */}
             {!message.is_recalled && !message.isBot && (
                 <div className={clsx(
-                    "flex transition-all items-center space-x-0.5 z-[60]",
-                    (showMenu || showEmoji) ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                    "flex transition-all items-center space-x-0.5 rounded-full p-0.5 shadow-sm border border-gray-100/50",
+                    activeDropdownId?.includes(message.id) ? "z-[160] opacity-100 bg-white" : "z-0 opacity-0 group-hover:opacity-100 bg-white/60 backdrop-blur-sm",
                     isMe ? "mr-2 flex-row-reverse space-x-reverse" : "ml-2 flex-row"
                 )}>
                     {/* Reaction Icon */}
@@ -518,27 +514,39 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                             <Smile size={18} />
                         </button>
                         
-                        {/* Quick Emoji Picker (Zalo Style) */}
+                        {/* Quick Emoji Picker (Messenger Style) */}
                         {showEmoji && (
                             <div className={clsx(
-                                "absolute flex bg-white/90 backdrop-blur-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] rounded-2xl border border-white/20 p-1.5 z-[10000] space-x-1 animate-in fade-in zoom-in-95 duration-200 min-w-[240px] justify-center items-center",
+                                "absolute flex bg-white/95 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.15)] rounded-full border border-gray-100 p-1 z-[100] space-x-0.5 animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-300 min-w-[280px] justify-between items-center px-2",
                                 menuDirection === 'up' ? "bottom-full mb-3" : "top-full mt-3",
                                 isMe ? "right-0" : "left-0",
                                 menuDirection === 'up' 
                                     ? (isMe ? "origin-bottom-right" : "origin-bottom-left")
                                     : (isMe ? "origin-top-right" : "origin-top-left")
                             )}>
-                                {['❤️', '😆', '😮', '😢', '😠', '👍', '🔥', '🎉'].map(emoji => (
+                                {[
+                                    { e: '👍', label: 'Like' },
+                                    { e: '❤️', label: 'Love' },
+                                    { e: '😂', label: 'Haha' },
+                                    { e: '😮', label: 'Wow' },
+                                    { e: '😢', label: 'Sad' },
+                                    { e: '😡', label: 'Angry' }
+                                ].map(({ e, label }) => (
                                     <button 
-                                        key={emoji} 
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            addReaction(message.id, emoji);
+                                        key={e} 
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            addReaction(message.id, e);
                                             setActiveDropdown(null);
                                         }}
-                                        className="hover:scale-150 active:scale-95 transition-all w-8 h-8 flex items-center justify-center text-xl leading-none hover:bg-gray-100/50 rounded-xl"
+                                        className="relative group/emoji hover:scale-[1.35] hover:-translate-y-2 active:scale-95 transition-all w-10 h-10 flex items-center justify-center text-2xl leading-none rounded-full hover:bg-gray-50/80"
+                                        title={label}
                                     >
-                                        {emoji}
+                                        <span className="drop-shadow-sm">{e}</span>
+                                        <span className="absolute -top-10 scale-0 group-hover/emoji:scale-100 transition-all bg-gray-900/90 backdrop-blur-md text-white text-[10px] px-2 py-1.5 rounded-lg font-bold whitespace-nowrap z-[110] pointer-events-none shadow-xl border border-white/10">
+                                            {label}
+                                            <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900/90 rotate-45" />
+                                        </span>
                                     </button>
                                 ))}
                             </div>
@@ -569,11 +577,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                             <MoreHorizontal size={18} />
                         </button>
                         
-                        {/* Dropdown Content - Telegram/Zalo Refined Style */}
+                        {/* Dropdown Content - Messenger Inspired Style */}
                         {showMenu && (
                             <div className={clsx(
-                                "absolute bg-white/95 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.15)] rounded-2xl border border-gray-100/50 py-2 z-[9999] min-w-[200px] animate-in fade-in zoom-in-95 duration-150 overflow-hidden",
-                                menuDirection === 'up' ? "bottom-full mb-3" : "top-full mt-3",
+                                "absolute bg-white shadow-[0_4px_32px_rgba(0,0,0,0.16)] rounded-2xl border border-gray-100/50 py-1.5 z-[100] min-w-[210px] animate-in fade-in zoom-in-95 duration-200 overflow-hidden",
+                                menuDirection === 'up' ? "bottom-full mb-2" : "top-full mt-2",
                                 isMe ? "right-0" : "left-0",
                                 menuDirection === 'up' 
                                     ? (isMe ? "origin-bottom-right" : "origin-bottom-left")
@@ -581,16 +589,37 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                             )}>
                                 {/* Primary Actions Group */}
                                 <div className="px-1.5 space-y-0.5">
+                                    {message.file_url && (
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const link = document.createElement('a');
+                                                link.href = getAuthenticatedUrl(message.file_url || '');
+                                                link.download = getFileName(message.file_url || '', message.file_name);
+                                                document.body.appendChild(link);
+                                                link.click();
+                                                document.body.removeChild(link);
+                                                setActiveDropdown(null);
+                                            }}
+                                            className="w-full flex items-center px-3 py-2.5 hover:bg-blue-50 text-[14px] text-blue-600 font-bold rounded-xl transition-colors group/item"
+                                        >
+                                            <div className="flex items-center space-x-3">
+                                                <Download size={18} className="text-blue-600" />
+                                                <span>Lưu về máy</span>
+                                            </div>
+                                        </button>
+                                    )}
+
                                     <button 
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             setReplyingTo(message);
                                             setActiveDropdown(null);
                                         }}
-                                        className="w-full flex items-center justify-between px-3 py-2 hover:bg-blue-50 text-[13px] text-gray-700 font-medium rounded-xl transition-colors group/item"
+                                        className="w-full flex items-center px-3 py-2.5 hover:bg-gray-100 text-[14px] text-gray-700 font-medium rounded-xl transition-colors group/item"
                                     >
-                                        <div className="flex items-center space-x-2.5">
-                                            <Reply size={16} className="text-blue-500" />
+                                        <div className="flex items-center space-x-3">
+                                            <Reply size={18} className="text-gray-500 group-hover/item:text-blue-600" />
                                             <span>Trả lời</span>
                                         </div>
                                     </button>
@@ -601,10 +630,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                                             setForwardingMessage(message);
                                             setActiveDropdown(null);
                                         }}
-                                        className="w-full flex items-center justify-between px-3 py-2 hover:bg-blue-50 text-[13px] text-gray-700 font-medium rounded-xl transition-colors group/item"
+                                        className="w-full flex items-center px-3 py-2.5 hover:bg-gray-100 text-[14px] text-gray-700 font-medium rounded-xl transition-colors group/item"
                                     >
-                                        <div className="flex items-center space-x-2.5">
-                                            <Share2 size={16} className="text-blue-500" />
+                                        <div className="flex items-center space-x-3">
+                                            <Share2 size={18} className="text-gray-500 group-hover/item:text-blue-600" />
                                             <span>Chuyển tiếp</span>
                                         </div>
                                     </button>
@@ -612,20 +641,25 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                                     <button 
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            navigator.clipboard.writeText(message.content);
-                                            toast.success("Đã sao chép tin nhắn");
+                                            if (message.content) {
+                                                navigator.clipboard.writeText(message.content);
+                                                toast.success("Đã sao chép tin nhắn");
+                                            } else if (message.file_url) {
+                                                navigator.clipboard.writeText(getAuthenticatedUrl(message.file_url));
+                                                toast.success("Đã sao chép liên kết tệp");
+                                            }
                                             setActiveDropdown(null);
                                         }}
-                                        className="w-full flex items-center justify-between px-3 py-2 hover:bg-blue-50 text-[13px] text-gray-700 font-medium rounded-xl transition-colors group/item"
+                                        className="w-full flex items-center px-3 py-2.5 hover:bg-gray-100 text-[14px] text-gray-700 font-medium rounded-xl transition-colors group/item"
                                     >
-                                        <div className="flex items-center space-x-2.5">
-                                            <Copy size={16} className="text-blue-500" />
-                                            <span>Sao chép bản tin</span>
+                                        <div className="flex items-center space-x-3">
+                                            <Copy size={18} className="text-gray-500 group-hover/item:text-blue-600" />
+                                            <span>{message.content ? "Sao chép" : "Sao chép liên kết"}</span>
                                         </div>
                                     </button>
                                 </div>
 
-                                <div className="h-[1px] bg-gray-100 my-1.5 mx-3" />
+                                <div className="h-[1px] bg-gray-100 my-1 mx-3" />
 
                                 {/* Secondary Actions Group */}
                                 <div className="px-1.5 space-y-0.5">
@@ -635,81 +669,59 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                                             pinMessage(message.id);
                                             setActiveDropdown(null);
                                         }}
-                                        className="w-full flex items-center space-x-2.5 px-3 py-2 hover:bg-gray-50 text-[13px] text-gray-700 font-medium rounded-xl transition-colors"
+                                        className="w-full flex items-center space-x-3 px-3 py-2.5 hover:bg-gray-100 text-[14px] text-gray-700 font-medium rounded-xl transition-colors"
                                     >
-                                        <Pin size={16} className={message.is_pinned ? "text-orange-500 fill-orange-500" : "text-gray-400"} />
-                                        <span>{message.is_pinned ? "Bỏ ghim tin nhắn" : "Ghim tin nhắn"}</span>
+                                        <Pin size={18} className={message.is_pinned ? "text-orange-500 fill-orange-500" : "text-gray-500"} />
+                                        <span>{message.is_pinned ? "Bỏ ghim" : "Ghim tin nhắn"}</span>
                                     </button>
 
-                                    {message.file_url && (
-                                        <>
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    window.open(`${BASE_URL}${message.file_url}`, '_blank');
-                                                    setActiveDropdown(null);
-                                                }}
-                                                className="w-full flex items-center space-x-2.5 px-3 py-2 hover:bg-gray-50 text-[13px] text-gray-700 font-medium rounded-xl transition-colors"
-                                            >
-                                                <Download size={16} className="text-gray-400" />
-                                                <span>Tải xuống tệp</span>
-                                            </button>
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    const fileUrl = `${BASE_URL}${message.file_url}`;
-                                                    navigator.clipboard.writeText(fileUrl);
-                                                    toast.success("Đã sao chép liên kết tệp");
-                                                    setActiveDropdown(null);
-                                                }}
-                                                className="w-full flex items-center space-x-2.5 px-3 py-2 hover:bg-gray-50 text-[13px] text-gray-700 font-medium rounded-xl transition-colors"
-                                            >
-                                                <ExternalLink size={16} className="text-gray-400" />
-                                                <span>Sao chép liên kết</span>
-                                            </button>
-                                        </>
+                                    {message.file_type === 'image' && (
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                window.open(getAuthenticatedUrl(message.file_url), '_blank');
+                                                setActiveDropdown(null);
+                                            }}
+                                            className="w-full flex items-center space-x-3 px-3 py-2.5 hover:bg-gray-100 text-[14px] text-gray-700 font-medium rounded-xl transition-colors"
+                                        >
+                                            <Maximize2 size={18} className="text-gray-500" />
+                                            <span>Xem ảnh phóng to</span>
+                                        </button>
                                     )}
-
-                                    <button 
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            const details = `Thời gian: ${new Date(message.timestamp).toLocaleString()}\nID: ${message.id}\nNgười gửi: ${message.senderName}`;
-                                            toast.custom((t) => (
-                                                <div className="bg-white p-4 rounded-lg shadow-lg border border-gray-100 flex flex-col space-y-2 max-w-xs animate-in slide-in-from-bottom duration-200">
-                                                    <div className="flex items-center space-x-2 text-blue-600 font-bold">
-                                                        <Info size={16} />
-                                                        <span>Thông tin tin nhắn</span>
-                                                    </div>
-                                                    <div className="text-[12px] text-gray-600 whitespace-pre-wrap font-mono">
-                                                        {details}
-                                                    </div>
-                                                    <button onClick={() => toast.dismiss(t.id)} className="text-[11px] text-gray-400 hover:text-gray-600 font-medium self-end">Đóng</button>
-                                                </div>
-                                            ));
-                                            setActiveDropdown(null);
-                                        }}
-                                        className="w-full flex items-center space-x-2.5 px-3 py-2 hover:bg-gray-50 text-[13px] text-gray-700 font-medium rounded-xl transition-colors"
-                                    >
-                                        <Info size={16} className="text-gray-400" />
-                                        <span>Chi tiết</span>
-                                    </button>
                                 </div>
 
-                                <div className="h-[1px] bg-gray-100 my-1.5 mx-3" />
+                                <div className="h-[1px] bg-gray-100 my-1 mx-3" />
 
                                 {/* Critical Actions Group */}
                                 <div className="px-1.5 space-y-0.5">
-                                    <button 
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            reportMessage(message.id);
-                                            setActiveDropdown(null);
-                                        }}
-                                        className="w-full flex items-center space-x-2.5 px-3 py-2 hover:bg-orange-50 text-[13px] text-orange-600 font-medium rounded-xl transition-colors"
-                                    >
-                                        <X size={16} />
-                                        <span>Báo cáo vi phạm</span>
-                                    </button>
+                                    {isMe && !message.is_recalled && (
+                                        <>
+                                            {message.content && (
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setEditingMessage(message);
+                                                        setActiveDropdown(null);
+                                                    }}
+                                                    className="w-full flex items-center space-x-3 px-3 py-2.5 hover:bg-gray-100 text-[14px] text-gray-700 font-medium rounded-xl transition-colors"
+                                                >
+                                                    <Edit2 size={18} className="text-gray-500" />
+                                                    <span>Chỉnh sửa</span>
+                                                </button>
+                                            )}
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    recallMessage(message.id);
+                                                    setActiveDropdown(null);
+                                                }}
+                                                className="w-full flex items-center space-x-3 px-3 py-2.5 hover:bg-red-50 text-[14px] text-red-600 font-bold rounded-xl transition-colors"
+                                            >
+                                                <RotateCcw size={18} />
+                                                <span>Thu hồi</span>
+                                            </button>
+                                        </>
+                                    )}
 
                                     <button 
                                         onClick={(e) => {
@@ -717,38 +729,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                                             deleteMessageForMe(message.id);
                                             setActiveDropdown(null);
                                         }}
-                                        className="w-full flex items-center space-x-2.5 px-3 py-2 hover:bg-red-50 text-[13px] text-red-500 font-medium rounded-xl transition-colors"
+                                        className="w-full flex items-center space-x-3 px-3 py-2.5 hover:bg-red-50 text-[14px] text-red-500 font-medium rounded-xl transition-colors"
                                     >
-                                        <Trash2 size={16} />
-                                        <span>Gỡ ở phía bạn</span>
+                                        <Trash2 size={18} />
+                                        <span>Xóa ở phía tôi</span>
                                     </button>
-
-                                    {isMe && !message.is_recalled && (
-                                        <>
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setEditingMessage(message);
-                                                    setActiveDropdown(null);
-                                                }}
-                                                className="w-full flex items-center space-x-2.5 px-3 py-2 hover:bg-blue-50 text-[13px] text-blue-600 font-bold rounded-xl transition-colors"
-                                            >
-                                                <Edit2 size={16} />
-                                                <span>Chỉnh sửa</span>
-                                            </button>
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    recallMessage(message.id);
-                                                    setActiveDropdown(null);
-                                                }}
-                                                className="w-full flex items-center space-x-2.5 px-3 py-2 hover:bg-red-50 text-[13px] text-red-600 font-black rounded-xl transition-colors"
-                                            >
-                                                <RotateCcw size={16} />
-                                                <span>Thu hồi</span>
-                                            </button>
-                                        </>
-                                    )}
                                 </div>
                             </div>
                         )}
@@ -758,16 +743,45 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         </div>
         
         {isLast && (
-             <div className="flex items-center space-x-1 mt-1">
-                {message.is_pinned && (
-                    <Pin size={10} className="text-blue-500 fill-blue-500" />
+             <div className="flex flex-col items-end mt-1 space-y-0.5">
+                {isMe && !message.is_recalled && (
+                    <div className="flex items-center justify-end space-x-1 mb-0.5 min-h-[14px]">
+                        {message.status === 'sending' && (
+                            <div className="flex items-center space-x-1 opacity-60">
+                                <span className="text-[9px] text-gray-400 font-medium">Đang gửi</span>
+                                <CircleDashed size={9} className="text-gray-400 animate-spin" />
+                            </div>
+                        )}
+                        {message.status === 'sent' && (
+                            <div className="flex items-center space-x-1 opacity-60">
+                                <span className="text-[9px] text-gray-400 font-medium">Đã gửi</span>
+                                <Check size={9} className="text-gray-400 border border-gray-400 rounded-full p-[0.5px]" />
+                            </div>
+                        )}
+                        {message.status === 'delivered' && (
+                            <div className="flex items-center space-x-1 opacity-70">
+                                <span className="text-[9px] text-gray-500 font-medium">Đã nhận</span>
+                                <CheckCheck size={11} className="text-gray-500" />
+                            </div>
+                        )}
+                        {message.status === 'seen' && (
+                            <div className="flex items-center space-x-1 animate-in fade-in duration-300">
+                                <span className="text-[9px] text-blue-500 font-bold">Đã xem</span>
+                                <div className="w-2.5 h-2.5 rounded-full bg-blue-500 flex items-center justify-center shadow-sm">
+                                    <CheckCheck size={7} className="text-white" />
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 )}
-                <span className="text-[10px] text-gray-400">
-                    {formatChatTime(message.timestamp)}
-                </span>
-                {isMe && !message.is_recalled && isLatest && (
-                    <CheckCheck size={13} className="text-blue-600 ml-0.5 animate-in zoom-in duration-300" />
-                )}
+                <div className="flex items-center space-x-1">
+                    {message.is_pinned && (
+                        <Pin size={10} className="text-blue-500 fill-blue-500" />
+                    )}
+                    <span className="text-[10px] text-gray-400">
+                        {formatChatTime(message.timestamp)}
+                    </span>
+                </div>
             </div>
         )}
       </div>

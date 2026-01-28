@@ -8,9 +8,9 @@ import { ProfileView } from '../components/chat/ProfileView';
 import { ForwardModal } from '../components/chat/ForwardModal';
 import { Avatar } from '../components/common/Avatar';
 import { 
-    Info, LogOut, Pin, Search, Trash2, 
+    LogOut, Pin, Trash2, 
     BellOff, Flag, X, MessageCircle,
-    Headset, Bot, AlertCircle, CheckCircle,
+    Bot, CheckCircle,
     MoreHorizontal, ChevronRight, Image as ImageIcon,
     FileText, UserPlus, Bell, Settings,
     Search as SearchIcon, Users, User
@@ -30,10 +30,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
     rooms,
     activeRoom,
     setActiveRoom,
-    logout,
     sendMessage,
     currentUser,
-    fetchRooms
+    fetchRooms,
+    token
   } = useChat();
   const { 
     aiSuggestion, 
@@ -126,7 +126,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
     const container = mainRef.current;
     const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 250;
     const lastMessage = messages[messages.length - 1];
-    const isMyMessage = lastMessage?.senderId === currentUser?.id || lastMessage?.senderName === currentUser?.username;
+    const isMyMessage = lastMessage?.senderId === currentUser?.id;
 
     if (isAtBottom || isMyMessage) {
         messagesEndRef.current?.scrollIntoView({ 
@@ -193,8 +193,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
 
         if (item.type === 'date') {
             return (
-                <div key={`date-${item.date}`} className="flex justify-center my-6 sticky top-2 z-10">
-                    <span className="bg-gray-100/80 backdrop-blur-md text-gray-500 text-[11px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-sm border border-gray-200/50">
+                <div key={`date-${item.date}`} className="flex justify-center my-6 sticky top-2 z-[40]">
+                    <span className="bg-gray-200/80 text-gray-600 text-[12px] font-semibold px-4 py-1 rounded-full shadow-none border-none transition-all">
                         {item.date === new Date().toLocaleDateString() ? 'Hôm nay' : 
                          item.date === new Date(Date.now() - 86400000).toLocaleDateString() ? 'Hôm qua' : 
                          item.date}
@@ -209,7 +209,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                 message={item.message}
                 isFirst={item.isFirst}
                 isLast={item.isLast}
-                showAvatar={!item.message.isBot && !item.isLast}
+                showAvatar={item.isLast}
                 showName={item.isFirst}
                 isLatest={idx === grouped.length - 1}
             />
@@ -245,10 +245,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                 <div className="flex items-center mt-2 space-x-1">
                     <span className={clsx(
                         "w-2 h-2 rounded-full",
-                        (activeRoom.is_online || activeRoom.type === 'ai') ? "bg-green-500" : "bg-gray-300"
+                        (activeRoom.is_online || activeRoom.type === 'ai' || activeRoom.id === 'help') ? "bg-green-500" : "bg-gray-300"
                     )} />
                     <span className="text-[12px] text-gray-500 font-medium">
-                        {activeRoom.type === 'ai' ? 'LinkUp AI Assistant' : 
+                        {activeRoom.id === 'help' ? 'Phòng hỗ trợ trực tuyến' :
+                        activeRoom.type === 'ai' ? 'LinkUp AI Assistant' : 
                         activeRoom.type === 'direct' ? (activeRoom.is_online ? 'Đang hoạt động' : 'Ngoại tuyến') : 
                         `${roomMembers.length} thành viên`}
                     </span>
@@ -324,7 +325,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                 </div>
 
                 {/* Members Section for Groups */}
-                {(activeRoom.type === 'group' || activeRoom.type === 'public') && (
+                {(activeRoom.type === 'public' || (activeRoom.type === 'private' && activeRoom.id !== 'ai' && activeRoom.id !== 'help')) && (
                     <div className="rounded-xl overflow-hidden">
                         <button 
                             onClick={() => toggleSection('members')}
@@ -347,7 +348,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                                         onClick={() => setViewingUser(member)}
                                     >
                                         <div className="flex items-center space-x-3">
-                                            <Avatar name={member.username} url={member.avatar_url} size="sm" isOnline={member.is_online} />
+                                            <Avatar name={member.full_name || member.username} url={member.avatar_url} size="sm" isOnline={member.is_online} />
                                             <div className="flex flex-col">
                                                 <span className="text-[13px] font-bold text-gray-700 truncate max-w-[120px]">
                                                     {member.id === currentUser?.id ? 'Bạn (Tôi)' : (member.full_name || member.username)}
@@ -403,22 +404,28 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                         <span className="text-[12px] font-black text-gray-400 uppercase tracking-widest">Ảnh đã chia sẻ</span>
                         <ChevronRight size={14} className={clsx("text-gray-400 transition-transform", expandedSections.photos && "rotate-90")} />
                     </button>
-                    {expandedSections.photos && (
+                        {expandedSections.photos && (
                         <div className="grid grid-cols-3 gap-1 animate-in duration-200 fade-in">
-                            {mediaMessages.length > 0 ? mediaMessages.slice(0, 6).map((m, idx) => (
-                                <div 
-                                    key={m.id} 
-                                    onClick={() => window.open(m.file_url, '_blank')}
-                                    className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 cursor-pointer border border-gray-100 relative group/img"
-                                >
-                                    <img src={m.file_url} className="w-full h-full object-cover" alt="Media" />
-                                    {idx === 5 && mediaMessages.length > 6 && (
-                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-[14px] font-black">
-                                            +{mediaMessages.length - 6}
-                                        </div>
-                                    )}
-                                </div>
-                            )) : (
+                            {mediaMessages.length > 0 ? mediaMessages.slice(0, 6).map((m, idx) => {
+                                const authUrl = m.file_url?.startsWith('/api/v1/files/download/') 
+                                    ? `${import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:8000'}${m.file_url}${m.file_url.includes('?') ? '&' : '?'}token=${token}`
+                                    : (m.file_url?.startsWith('http') ? m.file_url : `${import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:8000'}${m.file_url}`);
+                                
+                                return (
+                                    <div 
+                                        key={m.id} 
+                                        onClick={() => window.open(authUrl, '_blank')}
+                                        className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 cursor-pointer border border-gray-100 relative group/img"
+                                    >
+                                        <img src={authUrl} className="w-full h-full object-cover" alt="Media" />
+                                        {idx === 5 && mediaMessages.length > 6 && (
+                                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-[14px] font-black">
+                                                +{mediaMessages.length - 6}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            }) : (
                                 <div className="col-span-3 py-6 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
                                     <ImageIcon size={20} className="text-gray-300 mx-auto mb-2" />
                                     <span className="text-[11px] text-gray-400 font-medium">Chưa có ảnh nào</span>
@@ -439,25 +446,31 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                     </button>
                     {expandedSections.files && (
                         <div className="space-y-1 animate-in duration-200 fade-in">
-                            {fileMessages.length > 0 ? fileMessages.slice(0, 3).map(m => (
-                                <button 
-                                    key={m.id} 
-                                    onClick={() => window.open(m.file_url, '_blank')}
-                                    className="w-full flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg transition-colors text-left group"
-                                >
-                                    <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors shrink-0">
-                                        <FileText size={18} />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-[13px] font-bold text-gray-700 truncate">
-                                            {m.file_url?.split('/').pop() || 'Tài liệu.pdf'}
-                                        </p>
-                                        <p className="text-[11px] text-gray-400 font-medium uppercase tracking-tighter">
-                                            {new Date(m.timestamp).toLocaleDateString()}
-                                        </p>
-                                    </div>
-                                </button>
-                            )) : (
+                            {fileMessages.length > 0 ? fileMessages.slice(0, 3).map(m => {
+                                const authUrl = m.file_url?.startsWith('/api/v1/files/download/') 
+                                    ? `${import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:8000'}${m.file_url}${m.file_url.includes('?') ? '&' : '?'}token=${token}`
+                                    : (m.file_url?.startsWith('http') ? m.file_url : `${import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:8000'}${m.file_url}`);
+                                
+                                return (
+                                    <button 
+                                        key={m.id} 
+                                        onClick={() => window.open(authUrl, '_blank')}
+                                        className="w-full flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg transition-colors text-left group"
+                                    >
+                                        <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors shrink-0">
+                                            <FileText size={18} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[13px] font-bold text-gray-700 truncate">
+                                                {m.file_url?.split('/').pop() || 'Tài liệu.pdf'}
+                                            </p>
+                                            <p className="text-[11px] text-gray-400 font-medium uppercase tracking-tighter">
+                                                {new Date(m.timestamp).toLocaleDateString()}
+                                            </p>
+                                        </div>
+                                    </button>
+                                );
+                            }) : (
                                 <div className="py-4 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
                                     <span className="text-[11px] text-gray-400 font-medium italic">Không có tệp tin</span>
                                 </div>
@@ -540,7 +553,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
              {/* Main Chat Content */}
              <div className="flex-1 flex flex-col relative bg-white overflow-hidden min-w-0">
                 {/* Header */}
-                <header className="h-[60px] border-b border-gray-100 px-3 flex items-center justify-between bg-white/95 backdrop-blur-sm z-10 shadow-sm shrink-0">
+                <header className="h-[64px] border-b border-gray-100 px-4 flex items-center justify-between bg-white/90 backdrop-blur-md z-[50] shadow-sm shrink-0 sticky top-0">
                   <div 
                     className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded-xl transition-colors"
                     onClick={() => setIsInfoOpen(!isInfoOpen)}
