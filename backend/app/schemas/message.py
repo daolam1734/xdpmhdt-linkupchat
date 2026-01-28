@@ -16,6 +16,7 @@ class MessageRead(MessageBase):
     sender_avatar: Optional[str] = None
     receiver_id: Optional[str] = None  # Dùng cho các phòng biệt lập (AI, Help)
     file_url: Optional[str] = None
+    file_name: Optional[str] = None
     file_type: Optional[str] = None
     timestamp: datetime
     is_bot: bool

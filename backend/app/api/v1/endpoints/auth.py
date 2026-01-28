@@ -125,6 +125,15 @@ async def update_user_me(
         
     if user_in.avatar_url is not None:
         update_data["avatar_url"] = user_in.avatar_url
+
+    if user_in.full_name is not None:
+        update_data["full_name"] = user_in.full_name
+
+    if user_in.email is not None:
+        update_data["email"] = user_in.email
+
+    if user_in.phone is not None:
+        update_data["phone"] = user_in.phone
         
     if user_in.bio is not None:
         update_data["bio"] = user_in.bio

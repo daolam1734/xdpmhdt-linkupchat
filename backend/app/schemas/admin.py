@@ -27,3 +27,6 @@ class SupportStatusUpdate(BaseModel):
 
 class SupportNoteUpdate(BaseModel):
     note: str
+
+class SupportMessageUpdate(BaseModel):
+    content: str

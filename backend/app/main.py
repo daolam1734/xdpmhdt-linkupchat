@@ -23,14 +23,25 @@ app = FastAPI(
 async def startup_event():
     await init_db()
 
-# Cấu hình thư mục static để phục vụ tệp tin tải lên
-# Đảm bảo đường dẫn tuyệt đối để tránh lỗi CWD khác nhau
+# Cấu hình thư mục lưu trữ tập trung (Centralized Storage)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
+STATIC_DIR = os.path.join(BASE_DIR, "static")       # True static assets (favicon, etc)
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")      # Root upload folder
+AVATAR_DIR = os.path.join(UPLOAD_DIR, "avatars")    # Public avatars
+MESSAGE_DIR = os.path.join(UPLOAD_DIR, "messages")  # Private messages files
 
-if not os.path.exists(STATIC_DIR):
-    os.makedirs(STATIC_DIR, exist_ok=True)
+# Đảm bảo cấu trúc thư mục tồn tại
+for d in [STATIC_DIR, UPLOAD_DIR, AVATAR_DIR, MESSAGE_DIR]:
+    if not os.path.exists(d):
+        os.makedirs(d, exist_ok=True)
+
+# Mount các thư mục phục vụ tệp tin
+# /static: Phục vụ logo, favicon...
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# /avatars: Phục vụ ảnh đại diện (Công khai theo Policy mới)
+app.mount("/avatars", StaticFiles(directory=AVATAR_DIR), name="avatars")
+# Lưu ý: Tin nhắn (/uploads/messages) KHÔNG được mount công khai. 
+# Chúng sẽ được phục vụ qua endpoint /api/v1/files/download/{file_id} để kiểm tra Auth.
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
