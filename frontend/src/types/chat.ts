@@ -1,11 +1,13 @@
 export interface User {
   id: string;
   username: string;
+  full_name?: string;
   avatar?: string;
   avatar_url?: string;
   bio?: string;
   is_online?: boolean;
   isOnline?: boolean;
+  show_online_status?: boolean;
   last_seen?: string;
   created_at?: string;
   is_friend?: boolean;
@@ -22,6 +24,11 @@ export interface User {
     theme?: 'light' | 'dark';
     language?: 'vi' | 'en';
     notifications?: boolean;
+    profile?: {
+      work?: string;
+      education?: string;
+      location?: string;
+    };
   };
   ai_settings?: {
     context_access?: boolean;
@@ -59,6 +66,7 @@ export interface Message {
   receiver_id?: string;
   content: string;
   file_url?: string;
+  file_name?: string;
   file_type?: 'image' | 'file';
   timestamp: string; // ISO string
   isBot: boolean;

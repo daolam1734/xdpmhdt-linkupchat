@@ -25,14 +25,16 @@ interface ChatState {
     activeDropdownId: string | null; // ID of the currently open dropdown
     viewingUser: User | null; // Profile view state
     roomMembers: User[]; // Members of the active room
+    isHydrated: boolean;
 
     fetchRooms: (silent?: boolean) => Promise<void>;
     setActiveRoom: (room: Room | null) => Promise<void>;
     fetchRoomMembers: (roomId: string) => Promise<void>;
     setViewingUser: (user: User | null) => void;
+    setHydrated: (val: boolean) => void;
     connect: (token: string) => void;
     disconnect: () => void;
-    sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }, receiverId?: string) => boolean;
+    sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file', name?: string }, receiverId?: string) => boolean;
     editMessage: (messageId: string, content: string) => void;
     recallMessage: (messageId: string) => void;
     deleteMessageForMe: (messageId: string) => void;
@@ -57,6 +59,7 @@ interface ChatState {
     dismissSuggestions: (messageId: string) => void;
     setActiveDropdown: (id: string | null) => void;
     sendTypingStatus: (status: boolean) => void;
+    reset: () => void;
 }
 
 const RECONNECT_INTERVALS = [1000, 2000, 5000, 10000];
@@ -96,6 +99,7 @@ export const useChatStore = create<ChatState>()(
         activeDropdownId: null,
         viewingUser: null,
         roomMembers: [],
+        isHydrated: false,
 
         fetchRooms: async (silent = false) => {
             if (!silent) set({ isLoading: true });
@@ -115,8 +119,20 @@ export const useChatStore = create<ChatState>()(
                 if (currentActive) {
                     const freshRoom = sortedRooms.find((r: any) => r.id === currentActive.id);
                     if (freshRoom) {
-                        set({ activeRoom: freshRoom });
+                        // Nếu chưa có tin nhắn (thường là sau khi reload), tải lại context phòng
+                        if (get().messages.length === 0) {
+                            await get().setActiveRoom(freshRoom);
+                        } else {
+                            set({ activeRoom: freshRoom });
+                        }
                     }
+                }
+
+                // Nếu đang view profile của chính mình khi reload, cập nhật lại data mới nhất
+                const vUser = get().viewingUser;
+                const cUser = useAuthStore.getState().currentUser;
+                if (vUser && cUser && vUser.id === cUser.id) {
+                    set({ viewingUser: cUser });
                 }
             } catch (error) {
                 console.error('Fetch rooms failed:', error);
@@ -135,7 +151,9 @@ export const useChatStore = create<ChatState>()(
                 activeRoom: room,
                 messages: [],
                 isLoading: true,
-                viewingUser: null,
+                // Chỉ xóa viewingUser nếu đang ở chế độ xem chat thông thường (không phải đang xem profile)
+                // Hoặc nếu room thay đổi mà không phải do reload
+                viewingUser: state.viewingUser, 
                 roomMembers: [],
                 rooms: state.rooms.map(r => r.id === room.id ? { ...r, has_unread: false, unread_count: 0 } : r)
             }));
@@ -156,6 +174,7 @@ export const useChatStore = create<ChatState>()(
                     timestamp: m.timestamp,
                     isBot: m.is_bot,
                     file_url: m.file_url,
+                    file_name: m.file_name,
                     file_type: m.file_type,
                     is_edited: m.is_edited,
                     is_recalled: m.is_recalled,
@@ -186,6 +205,8 @@ export const useChatStore = create<ChatState>()(
         },
 
         setViewingUser: (user: User | null) => set({ viewingUser: user }),
+
+        setHydrated: (val: boolean) => set({ isHydrated: val }),
 
         addMessage: (msg: Message) => {
             set((state) => {
@@ -284,6 +305,15 @@ export const useChatStore = create<ChatState>()(
 
                     switch (data.type) {
                         case 'message':
+                            const currentUserId = useAuthStore.getState().currentUser?.id;
+                            
+                            // LinkUp: Isolation logic for help room to ensure admin side looks like user side
+                            if (data.room_id === 'help') {
+                                const isPersonal = (data.sender_id === currentUserId && !data.receiver_id) || 
+                                                 (data.receiver_id === currentUserId);
+                                if (!isPersonal) return;
+                            }
+
                             const msgData = {
                                 id: data.message_id || data.id || Math.random().toString(36).substr(2, 9),
                                 roomId: data.room_id,
@@ -292,6 +322,7 @@ export const useChatStore = create<ChatState>()(
                                 senderAvatar: data.sender_avatar,
                                 content: data.content,
                                 file_url: data.file_url,
+                                file_name: data.file_name,
                                 file_type: data.file_type,
                                 timestamp: data.timestamp || new Date().toISOString(),
                                 isBot: data.is_bot,
@@ -305,7 +336,6 @@ export const useChatStore = create<ChatState>()(
                             get().addMessage(msgData);
                         
                             // Auto read receipt for active room
-                            const currentUserId = useAuthStore.getState().currentUser?.id;
                             if (get().activeRoom?.id === data.room_id && data.sender_id !== currentUserId) {
                                 get().sendReadReceipt(data.room_id, data.message_id);
                             }
@@ -657,7 +687,7 @@ export const useChatStore = create<ChatState>()(
                                 }
 
                                 if (data.status) {
-                                    newTyping[roomId][data.user_id] = data.username;
+                                    newTyping[roomId][data.user_id] = data.full_name || data.username;
                                 } else {
                                     delete newTyping[roomId][data.user_id];
                                 }
@@ -772,7 +802,7 @@ export const useChatStore = create<ChatState>()(
             set({ isConnected: false, socket: null, messages: [], replyingTo: null, editingMessage: null });
         },
 
-        sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file' }, receiverId?: string) => {
+        sendMessage: (content: string, replyToId?: string, fileData?: { url: string, type: 'image' | 'file', name?: string }, receiverId?: string) => {
             const { socket, activeRoom } = get();
             if (activeRoom && (!socket || socket.readyState !== WebSocket.OPEN)) {
                 toast.error("Mất kết nối server. Vui lòng chờ đang kết nối lại...");
@@ -795,6 +825,7 @@ export const useChatStore = create<ChatState>()(
                     timestamp: new Date().toISOString(),
                     status: 'sending',
                     file_url: fileData?.url,
+                    file_name: fileData?.name,
                     file_type: fileData?.type,
                     reply_to_id: replyToId,
                     isBot: false
@@ -810,6 +841,7 @@ export const useChatStore = create<ChatState>()(
                     reply_to_id: replyToId,
                     receiver_id: receiverId,
                     file_url: fileData?.url,
+                    file_name: fileData?.name,
                     file_type: fileData?.type
                 }));
                 set({ replyingTo: null });
@@ -923,6 +955,7 @@ export const useChatStore = create<ChatState>()(
                     content: msg.content,
                     room_id: targetRoomId,
                     file_url: msg.file_url,
+                    file_name: msg.file_name,
                     file_type: msg.file_type,
                     is_forwarded: true
                 }));
@@ -939,7 +972,8 @@ export const useChatStore = create<ChatState>()(
             const formData = new FormData();
             formData.append('file', file);
             
-            const response = await chatService.uploadFile(formData);
+            const activeRoomId = get().activeRoom?.id;
+            const response = await chatService.uploadFile(formData, 'file', activeRoomId);
             return {
                 url: response.data.url,
                 type: response.data.type,
@@ -1052,12 +1086,40 @@ export const useChatStore = create<ChatState>()(
                 }));
             }
         },
+
+        reset: () => {
+            get().disconnect();
+            set({
+                rooms: [],
+                activeRoom: null,
+                messages: [],
+                aiSuggestion: null,
+                replyingTo: null,
+                editingMessage: null,
+                forwardingMessage: null,
+                searchResults: [],
+                searchQuery: '',
+                isViewingPinned: false,
+                aiTypingRooms: {},
+                typingUsers: {},
+                activeDropdownId: null,
+                viewingUser: null,
+                roomMembers: [],
+            });
+        },
     };
 },
 {
     name: 'linkup-chat-storage',
     partialize: (state: ChatState) => ({ 
-        isMuted: state.isMuted
+        isMuted: state.isMuted,
+        activeRoom: state.activeRoom,
+        viewingUser: state.viewingUser,
+        isViewingPinned: state.isViewingPinned,
+        searchQuery: state.searchQuery
     }),
+    onRehydrateStorage: () => (state) => {
+        state?.setHydrated(true);
+    }
 }
 ));

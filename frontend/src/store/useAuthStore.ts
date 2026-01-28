@@ -28,7 +28,9 @@ interface AuthState {
         email?: string;
         full_name?: string;
         phone?: string;
+        password?: string;
         allow_stranger_messages?: boolean;
+        show_online_status?: boolean;
         ai_preferences?: {
             preferred_style?: 'short' | 'balanced' | 'detailed';
             coding_frequency?: 'low' | 'medium' | 'high';
@@ -38,6 +40,11 @@ interface AuthState {
             theme?: 'light' | 'dark';
             language?: 'vi' | 'en';
             notifications?: boolean;
+            profile?: {
+                work?: string;
+                education?: string;
+                location?: string;
+            };
         };
         ai_settings?: {
             context_access?: boolean;
@@ -50,7 +57,7 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set, get) => ({
     token: localStorage.getItem('chat_token'),
     currentUser: null,
-    isLoading: false,
+    isLoading: !!localStorage.getItem('chat_token'),
     error: null,
 
     initialize: async () => {
@@ -101,12 +108,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     },
 
     fetchCurrentUser: async () => {
+        set({ isLoading: true });
         try {
             const response = await authService.getMe();
             set({ currentUser: { ...response.data, isOnline: true } });
         } catch (error) {
             set({ token: null, currentUser: null });
             setAuthToken(null);
+        } finally {
+            set({ isLoading: false });
         }
     },
 
