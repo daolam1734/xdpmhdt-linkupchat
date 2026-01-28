@@ -35,7 +35,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onBack }) => {
                     email: email || undefined, 
                     full_name: fullName || undefined 
                 });
-                setSuccessMsg('Đăng ký thành công! Đang đăng nhập...');
+                setSuccessMsg('Đăng ký thành công!');
                 setTimeout(async () => {
                     await login(username, password);
                 }, 1000);

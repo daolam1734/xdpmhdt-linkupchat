@@ -81,6 +81,7 @@ export const GroupCreateModal: React.FC<GroupCreateModalProps> = ({ isOpen, onCl
     if (!isOpen) return null;
 
     const filteredFriends = friends.filter(f => 
+        (f.full_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
         f.username.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
@@ -152,10 +153,10 @@ export const GroupCreateModal: React.FC<GroupCreateModalProps> = ({ isOpen, onCl
                                         )}
                                     >
                                         <div className="flex items-center space-x-3">
-                                            <Avatar name={friend.username} url={friend.avatar_url} size="md" />
+                                            <Avatar name={friend.full_name || friend.username} url={friend.avatar_url} size="md" />
                                             <div>
-                                                <p className="text-sm font-bold">{friend.username}</p>
-                                                <p className="text-[10px] opacity-70">Bạn bè</p>
+                                                <p className="text-sm font-bold">{friend.full_name || friend.username}</p>
+                                                <p className="text-[10px] opacity-70">@{friend.username}</p>
                                             </div>
                                         </div>
                                         <div className={clsx(
