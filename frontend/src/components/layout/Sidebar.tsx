@@ -223,11 +223,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     
                     <div className="flex items-center space-x-1.5">
                         <button 
+                            onClick={() => {
+                                const searchInput = document.querySelector('input[placeholder="Tìm kiếm trên LinkUp"]') as HTMLInputElement;
+                                if (searchInput) searchInput.focus();
+                            }}
+                            className="p-2 bg-gray-100/50 text-gray-600 rounded-full hover:bg-gray-100 transition-all active:scale-95"
+                            title="Thêm bạn bè"
+                        >
+                            <UserPlus size={20} />
+                        </button>
+
+                        <button 
                             onClick={() => setIsGroupModalOpen(true)}
                             className="p-2 bg-gray-100/50 text-gray-600 rounded-full hover:bg-gray-100 transition-all active:scale-95"
                             title="Tạo nhóm mới"
                         >
-                            <Plus size={20} />
+                            <Users size={20} />
                         </button>
 
                         {(currentUser?.role === 'admin' || currentUser?.is_superuser) && (

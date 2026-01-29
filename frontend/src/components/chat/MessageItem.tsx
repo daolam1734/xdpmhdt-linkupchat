@@ -178,6 +178,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   return (
     <div
       id={`msg-${message.id}`}
+      data-message-id={message.id}
       className={twMerge(
         'flex w-full animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out items-end space-x-2 px-4 scroll-mt-20 relative select-text',
         activeDropdownId?.includes(message.id) ? 'z-[45]' : 'z-0',
