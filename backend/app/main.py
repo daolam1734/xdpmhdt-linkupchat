@@ -36,10 +36,27 @@ for d in [STATIC_DIR, UPLOAD_DIR, AVATAR_DIR, MESSAGE_DIR]:
         os.makedirs(d, exist_ok=True)
 
 # Mount các thư mục phục vụ tệp tin
+# Phục vụ tệp tin trong chat (Fallback cho các URL cũ /static/uploads/...)
+@app.get("/static/uploads/{file_name}")
+async def serve_old_uploads(file_name: str):
+    from fastapi.responses import FileResponse
+    # Thử tìm trong thư mục messages
+    msg_path = os.path.join(MESSAGE_DIR, file_name)
+    if os.path.exists(msg_path):
+        return FileResponse(msg_path)
+    
+    # Thử tìm trong thư mục uploads trực tiếp
+    root_path = os.path.join(UPLOAD_DIR, file_name)
+    if os.path.exists(root_path):
+        return FileResponse(root_path)
+        
+    raise HTTPException(status_code=404, detail="File not found in fallback storage")
+
 # /static: Phục vụ logo, favicon...
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 # /avatars: Phục vụ ảnh đại diện (Công khai theo Policy mới)
 app.mount("/avatars", StaticFiles(directory=AVATAR_DIR), name="avatars")
+
 # Lưu ý: Tin nhắn (/uploads/messages) KHÔNG được mount công khai. 
 # Chúng sẽ được phục vụ qua endpoint /api/v1/files/download/{file_id} để kiểm tra Auth.
 
