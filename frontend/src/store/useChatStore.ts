@@ -25,12 +25,14 @@ interface ChatState {
     activeDropdownId: string | null; // ID of the currently open dropdown
     viewingUser: User | null; // Profile view state
     roomMembers: User[]; // Members of the active room
+    lastReadMessageIds: Record<string, string>; // room_id: last_message_id_viewed
     isHydrated: boolean;
 
     fetchRooms: (silent?: boolean) => Promise<void>;
     setActiveRoom: (room: Room | null) => Promise<void>;
     fetchRoomMembers: (roomId: string) => Promise<void>;
     setViewingUser: (user: User | null) => void;
+    setLastReadMessageId: (roomId: string, messageId: string) => void;
     setHydrated: (val: boolean) => void;
     connect: (token: string) => void;
     disconnect: () => void;
@@ -51,6 +53,9 @@ interface ChatState {
     clearHistory: (roomId: string) => Promise<void>;
     togglePin: (roomId: string) => Promise<void>;
     deleteRoom: (roomId: string) => Promise<void>;
+    updateRoomInfo: (roomId: string, data: { name?: string, avatar_url?: string }) => Promise<void>;
+    addRoomMembers: (roomId: string, memberIds: string[]) => Promise<void>;
+    changeMemberRole: (roomId: string, userId: string, role: string) => Promise<void>;
     sendReadReceipt: (roomId: string, messageId?: string) => void;
     searchMessages: (query: string) => Promise<void>;
     setSearchQuery: (query: string) => void;
@@ -99,6 +104,7 @@ export const useChatStore = create<ChatState>()(
         activeDropdownId: null,
         viewingUser: null,
         roomMembers: [],
+        lastReadMessageIds: {},
         isHydrated: false,
 
         fetchRooms: async (silent = false) => {
@@ -205,6 +211,15 @@ export const useChatStore = create<ChatState>()(
         },
 
         setViewingUser: (user: User | null) => set({ viewingUser: user }),
+
+        setLastReadMessageId: (roomId: string, messageId: string) => {
+            set((state) => ({
+                lastReadMessageIds: {
+                    ...state.lastReadMessageIds,
+                    [roomId]: messageId
+                }
+            }));
+        },
 
         setHydrated: (val: boolean) => set({ isHydrated: val }),
 
@@ -408,6 +423,45 @@ export const useChatStore = create<ChatState>()(
                                 m.id === data.message_id ? { ...m, is_pinned: data.is_pinned } : m
                             )
                         }));
+                        break;
+                    case 'member_role_updated':
+                        if (get().activeRoom?.id === data.room_id) {
+                            set(state => ({
+                                roomMembers: state.roomMembers.map(m => 
+                                    m.id === data.user_id ? { ...m, role: data.new_role } : m
+                                )
+                            }));
+                        }
+                        break;
+                    case 'room_updated':
+                        set(state => ({
+                            rooms: state.rooms.map(r => r.id === data.room.id ? { ...r, ...data.room } : r),
+                            activeRoom: state.activeRoom?.id === data.room.id ? { ...state.activeRoom, ...data.room } : state.activeRoom
+                        }));
+                        break;
+                    case 'members_added':
+                        if (get().activeRoom?.id === data.room_id) {
+                            get().fetchRoomMembers(data.room_id);
+                        }
+                        break;
+                    case 'member_left':
+                        if (get().activeRoom?.id === data.room_id) {
+                            if (data.user_id === get().currentUser?.id) {
+                                // I was kicked or I left
+                                set({ activeRoom: null, roomMembers: [] });
+                                toast.error("Bạn đã không còn ở trong phòng này");
+                            } else {
+                                set(state => ({
+                                    roomMembers: state.roomMembers.filter(m => m.id !== data.user_id)
+                                }));
+                            }
+                        }
+                        // Also update rooms list (remove if it was me)
+                        if (data.user_id === get().currentUser?.id) {
+                            set(state => ({
+                                rooms: state.rooms.filter(r => r.id !== data.room_id)
+                            }));
+                        }
                         break;
                     case 'reaction':
                         set(state => ({
@@ -1035,6 +1089,66 @@ export const useChatStore = create<ChatState>()(
             }
         },
 
+        updateRoomInfo: async (roomId: string, data: { name?: string, avatar_url?: string }) => {
+            try {
+                const response = await chatService.updateRoom(roomId, data);
+                const updatedRoom = response.data;
+                set(state => ({
+                    rooms: state.rooms.map(r => r.id === roomId ? { ...r, ...updatedRoom } : r),
+                    activeRoom: state.activeRoom?.id === roomId ? { ...state.activeRoom, ...updatedRoom } : state.activeRoom
+                }));
+                toast.success('Cập nhật thông tin nhóm thành công');
+            } catch (error) {
+                console.error('Update room info failed:', error);
+                toast.error('Không thể cập nhật thông tin nhóm');
+                throw error;
+            }
+        },
+
+        addRoomMembers: async (roomId: string, memberIds: string[]) => {
+            try {
+                await chatService.addMembers(roomId, memberIds);
+                toast.success('Thêm thành viên thành công');
+                // Refresh members list
+                if (get().activeRoom?.id === roomId) {
+                    await get().fetchRoomMembers(roomId);
+                }
+            } catch (error) {
+                console.error('Add members failed:', error);
+                toast.error('Không thể thêm thành viên');
+                throw error;
+            }
+        },
+
+        changeMemberRole: async (roomId: string, userId: string, role: string) => {
+            try {
+                await chatService.updateMemberRole(roomId, userId, role);
+                // Local update for immediate feedback
+                set(state => ({
+                    roomMembers: state.roomMembers.map(m => 
+                        m.id === userId ? { ...m, role } : m
+                    )
+                }));
+                toast.success(role === 'admin' ? "Đã bổ nhiệm làm phó nhóm" : "Đã gỡ vai trò phó nhóm");
+            } catch (error) {
+                console.error('Change role error:', error);
+                toast.error("Không thể thay đổi vai trò");
+            }
+        },
+
+        removeMember: async (roomId: string, userId: string) => {
+            try {
+                await chatService.removeMember(roomId, userId);
+                set(state => ({
+                    roomMembers: state.roomMembers.filter(m => m.id !== userId)
+                }));
+                toast.success("Đã xóa thành viên khỏi nhóm");
+            } catch (error) {
+                console.error('Remove member error:', error);
+                toast.error("Không thể xóa thành viên");
+            }
+        },
+
         sendReadReceipt: (roomId: string, messageId?: string) => {
             const { socket } = get();
             if (socket && socket.readyState === WebSocket.OPEN) {
@@ -1116,7 +1230,8 @@ export const useChatStore = create<ChatState>()(
         activeRoom: state.activeRoom,
         viewingUser: state.viewingUser,
         isViewingPinned: state.isViewingPinned,
-        searchQuery: state.searchQuery
+        searchQuery: state.searchQuery,
+        lastReadMessageIds: state.lastReadMessageIds
     }),
     onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);
