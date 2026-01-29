@@ -3,6 +3,7 @@ import api from '../services/api';
 export interface UserSearchItem {
     id: string;
     username: string;
+    full_name?: string;
     avatar_url?: string;
     bio?: string;
     is_friend?: boolean;

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import uuid
 
 from backend.app.db.session import get_db
-from backend.app.schemas.room import Room, RoomCreate, GroupCreate
+from backend.app.schemas.room import Room, RoomCreate, GroupCreate, RoomUpdate, AddMembers, MemberRoleUpdate
 from backend.app.api.deps import get_current_user
 
 router = APIRouter()
@@ -225,7 +225,7 @@ async def create_group_chat(
             "room_id": room_id,
             "user_id": uid,
             "joined_at": datetime.now(timezone.utc),
-            "role": "admin" if uid == current_user["id"] else "member"
+            "role": "owner" if uid == current_user["id"] else "member"
         }
         for uid in member_ids
     ]
@@ -288,20 +288,73 @@ async def delete_room_for_user(
     current_user: dict = Depends(get_current_user)
 ) -> Any:
     """
-    Xóa phòng chat đối với người dùng nội bộ (rời phòng hoặc ẩn direct chat).
+    Rời phòng hoặc xóa cuộc hội thoại khỏi danh sách.
+    Nếu là Trưởng nhóm rời đi, sẽ tự động chuyển quyền cho Phó nhóm hoặc thành viên lâu năm nhất.
     """
     if room_id in ["ai", "help", "general"]:
         raise HTTPException(status_code=400, detail="Không thể xóa các phòng hệ thống.")
         
-    result = await db["room_members"].delete_one({
+    # Lấy thông tin membership hiện tại
+    membership = await db["room_members"].find_one({
         "room_id": room_id,
         "user_id": current_user["id"]
     })
     
-    if result.deleted_count == 0:
+    if not membership:
         raise HTTPException(status_code=404, detail="Bạn không tham gia phòng này.")
         
-    return {"status": "success", "message": "Đã xóa đoạn chat khỏi danh sách"}
+    # Kiểm tra loại phòng
+    room = await db["chat_rooms"].find_one({"id": room_id})
+    if room and room.get("type") == "group":
+        # Logic rời nhóm
+        if membership.get("role") == "owner":
+            # Trưởng nhóm rời đi -> Tìm người kế nhiệm
+            # Ưu tiên phó nhóm (admin) gia nhập lâu nhất, sau đó đến thành viên (member) gia nhập lâu nhất
+            successor = await db["room_members"].find_one(
+                {"room_id": room_id, "user_id": {"$ne": current_user["id"]}},
+                sort=[("role", 1), ("joined_at", 1)] # 'admin' < 'member' (alphabetical), sau đó theo thời gian
+            )
+            
+            if successor:
+                await db["room_members"].update_one(
+                    {"room_id": room_id, "user_id": successor["user_id"]},
+                    {"$set": {"role": "owner"}}
+                )
+                
+                # Thông báo quyền sở hữu mới qua WS
+                try:
+                    from .ws.manager import manager
+                    await manager.broadcast_to_room(room_id, {
+                        "type": "member_role_updated",
+                        "room_id": room_id,
+                        "user_id": successor["user_id"],
+                        "new_role": "owner",
+                        "note": f"Phòng chat đã có trưởng nhóm mới."
+                    })
+                except Exception as e:
+                    print(f"Error broadcasting owner transfer: {e}")
+            else:
+                # Không còn ai trong nhóm -> Có thể xóa luôn group nếu muốn, hoặc để đó
+                # Ở đây ta giữ lại group rỗng hoặc xóa tùy chính sách. LinkUp chọn để rỗng để tránh mất data nếu admin quay lại (tùy chỉnh)
+                pass
+
+    result = await db["room_members"].delete_one({
+        "room_id": room_id,
+        "user_id": current_user["id"]
+    })
+
+    # Thông báo member rời đi
+    try:
+        from .ws.manager import manager
+        await manager.broadcast_to_room(room_id, {
+            "type": "member_left",
+            "room_id": room_id,
+            "user_id": current_user["id"]
+        })
+    except Exception as e:
+        print(f"Error broadcasting member leave: {e}")
+    
+    return {"status": "success", "message": "Đã rời khỏi phòng chat"}
 
 @router.get("/{room_id}/members")
 async def get_room_members(
@@ -336,3 +389,200 @@ async def get_room_members(
         })
         
     return final_members
+
+@router.patch("/{room_id}", response_model=Room)
+async def update_room(
+    room_id: str,
+    room_in: RoomUpdate,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    """
+    Cập nhật thông tin phòng (Tên, Ảnh đại diện). Chỉ dành cho Admin của phòng.
+    """
+    membership = await db["room_members"].find_one({
+        "room_id": room_id,
+        "user_id": current_user["id"]
+    })
+    
+    if not membership or (membership.get("role") not in ["admin", "owner"] and not current_user.get("is_superuser")):
+        raise HTTPException(status_code=403, detail="Bạn không có quyền chỉnh sửa thông tin phòng này.")
+
+    update_data = {k: v for k, v in room_in.dict(exclude_unset=True).items() if v is not None}
+    update_data["updated_at"] = datetime.now(timezone.utc)
+    
+    result = await db["chat_rooms"].update_one(
+        {"id": room_id},
+        {"$set": update_data}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phòng.")
+        
+    room = await db["chat_rooms"].find_one({"id": room_id})
+    
+    # Notify members
+    try:
+        from .ws.manager import manager
+        await manager.broadcast_to_room(room_id, {
+            "type": "room_updated",
+            "room": {
+                "id": room_id,
+                "name": room.get("name"),
+                "avatar_url": room.get("avatar_url")
+            }
+        })
+    except Exception as e:
+        print(f"Error broadcasting room update: {e}")
+        
+    return room
+
+@router.delete("/{room_id}/members/{user_id}")
+async def remove_room_member(
+    room_id: str,
+    user_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    """
+    Xóa thành viên khỏi phòng (Chỉ Admin/Owner có quyền)
+    """
+    # 1. Kiểm tra quyền của người gọi
+    caller_membership = await db["room_members"].find_one({
+        "room_id": room_id,
+        "user_id": current_user["id"]
+    })
+    
+    if not caller_membership or (caller_membership.get("role") not in ["admin", "owner"] and not current_user.get("is_superuser")):
+        raise HTTPException(status_code=403, detail="Chỉ quản trị viên mới có quyền xóa thành viên.")
+
+    # 2. Kiểm tra role của người bị xóa (Admin không thể xóa Owner)
+    target_membership = await db["room_members"].find_one({
+        "room_id": room_id,
+        "user_id": user_id
+    })
+    
+    if not target_membership:
+        raise HTTPException(status_code=404, detail="Thành viên không tìm thấy trong phòng.")
+        
+    if target_membership.get("role") == "owner" and not current_user.get("is_superuser"):
+        raise HTTPException(status_code=403, detail="Không thể xóa trưởng nhóm.")
+        
+    if caller_membership.get("role") == "admin" and target_membership.get("role") == "admin" and user_id != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Phó nhóm không thể xóa phó nhóm khác.")
+
+    # 3. Thực hiện xóa
+    await db["room_members"].delete_one({
+        "room_id": room_id,
+        "user_id": user_id
+    })
+    
+    # 4. Thông báo qua WS
+    try:
+        from .ws.manager import manager
+        await manager.broadcast_to_room(room_id, {
+            "type": "member_left",
+            "room_id": room_id,
+            "user_id": user_id
+        })
+    except Exception as e:
+        print(f"Error broadcasting member left: {e}")
+        
+    return {"status": "success", "message": "Đã xóa thành viên khỏi nhóm"}
+
+@router.post("/{room_id}/members")
+async def add_room_members(
+    room_id: str,
+    members_in: AddMembers,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    """
+    Thêm thành viên mới vào phòng.
+    """
+    room = await db["chat_rooms"].find_one({"id": room_id})
+    if not room:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phòng.")
+        
+    # Check if user is in room
+    membership = await db["room_members"].find_one({"room_id": room_id, "user_id": current_user["id"]})
+    if not membership:
+        raise HTTPException(status_code=403, detail="Bạn phải là thành viên để thêm người khác.")
+
+    new_members = []
+    for uid in members_in.member_ids:
+        # Check if already a member
+        exists = await db["room_members"].find_one({"room_id": room_id, "user_id": uid})
+        if not exists:
+            new_members.append({
+                "room_id": room_id,
+                "user_id": uid,
+                "joined_at": datetime.now(timezone.utc),
+                "role": "member"
+            })
+            
+    if new_members:
+        await db["room_members"].insert_many(new_members)
+        
+        # Notify room
+        try:
+            from .ws.manager import manager
+            await manager.broadcast_to_room(room_id, {
+                "type": "members_added",
+                "room_id": room_id,
+                "count": len(new_members)
+            })
+        except Exception as e:
+            print(f"Error broadcasting members added: {e}")
+
+    return {"status": "success", "added_count": len(new_members)}
+
+@router.patch("/{room_id}/members/{user_id}/role")
+async def update_member_role(
+    room_id: str,
+    user_id: str,
+    role_update: MemberRoleUpdate,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    """
+    Cập nhật vai trò của thành viên trong nhóm (Trưởng nhóm/Thành viên)
+    """
+    # 1. Kiểm tra xem người dùng hiện tại có quyền Owner (Trưởng nhóm) không
+    caller_membership = await db["room_members"].find_one({
+        "room_id": room_id, 
+        "user_id": current_user["id"]
+    })
+    
+    if not caller_membership or (caller_membership.get("role") != "owner" and not current_user.get("is_superuser")):
+        raise HTTPException(status_code=403, detail="Chỉ trưởng nhóm mới có quyền bổ nhiệm hoặc gỡ phó nhóm.")
+
+    # 2. Không cho phép tự thay đổi role của mình
+    if user_id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Trưởng nhóm không thể tự thay đổi vai trò của mình. Vui lòng chuyển nhượng nhóm.")
+
+    # 3. Cập nhật role cho member đích (chỉ cho phép admin hoặc member)
+    if role_update.role not in ["admin", "member"]:
+        raise HTTPException(status_code=400, detail="Vai trò không hợp lệ.")
+
+    result = await db["room_members"].update_one(
+        {"room_id": room_id, "user_id": user_id},
+        {"$set": {"role": role_update.role}}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Thành viên không tìm thấy trong phòng.")
+
+    # 4. Thông báo qua WebSocket
+    try:
+        from .ws.manager import manager
+        await manager.broadcast_to_room(room_id, {
+            "type": "member_role_updated",
+            "room_id": room_id,
+            "user_id": user_id,
+            "new_role": role_update.role
+        })
+    except Exception as e:
+        print(f"Error broadcasting role update: {e}")
+
+    return {"status": "success", "new_role": role_update.role}

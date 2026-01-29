@@ -27,6 +27,16 @@ class GroupCreate(BaseModel):
     name: str
     member_ids: List[str]
 
+class RoomUpdate(BaseModel):
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+class AddMembers(BaseModel):
+    member_ids: List[str]
+
+class MemberRoleUpdate(BaseModel):
+    role: str
+
 class Room(RoomBase):
     class Config:
         from_attributes = True
