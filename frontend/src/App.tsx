@@ -21,6 +21,14 @@ function App() {
   }, [initialize]);
 
   useEffect(() => {
+    if (currentUser?.app_settings?.theme) {
+      const isDark = currentUser.app_settings.theme === 'dark';
+      document.documentElement.classList.toggle('dark', isDark);
+      document.body.classList.toggle('dark', isDark); // Backup for some CSS overrides
+    }
+  }, [currentUser?.app_settings?.theme]);
+
+  useEffect(() => {
     if (!isFullyHydrated) return;
 
     if (token && currentUser) {

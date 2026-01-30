@@ -286,7 +286,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
 
                 <div className="flex items-end space-x-2">
                     {/* Rounded bubble container */}
-                    <div className="flex-1 flex items-end bg-[#F0F2F5] hover:bg-[#E4E6EB] transition-colors duration-200 rounded-[24px] px-2 py-1 ml-0 shadow-sm border border-transparent focus-within:border-gray-200 focus-within:bg-white group cursor-text">
+                    <div className="flex-1 flex items-end bg-[#F0F2F5] dark:bg-slate-800 hover:bg-[#E4E6EB] dark:hover:bg-slate-700 transition-colors duration-200 rounded-[24px] px-2 py-1 ml-0 shadow-sm border border-transparent focus-within:border-gray-200 dark:focus-within:border-slate-600 focus-within:bg-white dark:focus-within:bg-slate-800 group cursor-text">
                         <div className="flex items-center pb-1">
                             <input 
                                 type="file" 
@@ -317,7 +317,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
                             onChange={handleTextChange}
                             onKeyDown={handleKeyDown}
                             placeholder="Aa"
-                            className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 resize-none max-h-40 font-normal text-black text-[15px] py-1.5 px-2 placeholder:text-gray-500"
+                            className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 resize-none max-h-40 font-normal text-black dark:text-gray-100 text-[15px] py-1.5 px-2 placeholder:text-gray-500"
                             rows={1}
                             disabled={isLoading}
                             onInput={(e) => {

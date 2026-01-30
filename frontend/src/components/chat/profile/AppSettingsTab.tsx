@@ -53,28 +53,30 @@ export const AppSettingsTab: React.FC<AppSettingsTabProps> = ({
                     <button 
                         onClick={() => {
                             setTheme('light');
+                            document.documentElement.classList.remove('dark');
                             document.body.classList.remove('dark');
                         }}
                         className={clsx(
                             "flex flex-col items-center p-6 rounded-[24px] transition-all group",
-                            theme === 'light' ? "bg-white border-2 border-blue-600 shadow-xl shadow-blue-50" : "bg-gray-50 border-2 border-transparent opacity-60 hover:opacity-100"
+                            theme === 'light' ? "bg-white border-2 border-blue-600 shadow-xl shadow-blue-50 dark:bg-slate-800 dark:shadow-none" : "bg-gray-50 border-2 border-transparent opacity-60 hover:opacity-100 dark:bg-slate-900"
                         )}
                     >
                         <Sun size={32} strokeWidth={2.5} className={theme === 'light' ? "text-blue-600 mb-3" : "text-gray-400 mb-3 group-hover:text-amber-500 transition-colors"} />
-                        <span className={clsx("text-[14px] font-bold", theme === 'light' ? "text-blue-900" : "text-gray-500")}>Giao diện Sáng</span>
+                        <span className={clsx("text-[14px] font-bold", theme === 'light' ? "text-blue-900 dark:text-blue-400" : "text-gray-500")}>Giao diện Sáng</span>
                     </button>
                     <button 
                         onClick={() => {
                             setTheme('dark');
+                            document.documentElement.classList.add('dark');
                             document.body.classList.add('dark');
                         }}
                         className={clsx(
                             "flex flex-col items-center p-6 rounded-[24px] transition-all group",
-                            theme === 'dark' ? "bg-white border-2 border-blue-600 shadow-xl shadow-blue-50" : "bg-gray-50 border-2 border-transparent opacity-60 hover:opacity-100"
+                            theme === 'dark' ? "bg-white border-2 border-blue-600 shadow-xl shadow-blue-50 dark:bg-slate-800 dark:shadow-none" : "bg-gray-50 border-2 border-transparent opacity-60 hover:opacity-100 dark:bg-slate-900"
                         )}
                     >
                         <Moon size={32} strokeWidth={2.5} className={theme === 'dark' ? "text-blue-600 mb-3" : "text-gray-400 mb-3 group-hover:text-indigo-600 transition-colors"} />
-                        <span className={clsx("text-[14px] font-bold", theme === 'dark' ? "text-blue-900" : "text-gray-500")}>Giao diện Tối</span>
+                        <span className={clsx("text-[14px] font-bold", theme === 'dark' ? "text-blue-900 dark:text-blue-400" : "text-gray-500")}>Giao diện Tối</span>
                     </button>
                 </div>
             </section>

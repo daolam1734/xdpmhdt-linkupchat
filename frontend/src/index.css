@@ -25,12 +25,71 @@ body {
   margin: 0;
   min-height: 100vh;
   background-color: #f3f4f6;
-  transition: background-color 0.3s ease;
+  transition: all 0.3s ease;
 }
 
+/* Base Dark Mode Support */
 body.dark {
   background-color: #0f172a;
   color: #f8fafc;
+}
+
+/* Global Dark Mode Overrides for UI Elements */
+body.dark .bg-white,
+body.dark .bg-gray-50,
+body.dark .bg-slate-50 {
+  background-color: #1e293b !important;
+}
+
+body.dark .text-black,
+body.dark .text-gray-900,
+body.dark .text-slate-900,
+body.dark .text-gray-800 {
+  color: #f8fafc !important;
+}
+
+body.dark .text-gray-500,
+body.dark .text-slate-500,
+body.dark .text-gray-400 {
+  color: #94a3b8 !important;
+}
+
+body.dark .border-gray-100,
+body.dark .border-gray-200,
+body.dark .border-slate-100,
+body.dark .border-gray-50 {
+  border-color: #334155 !important;
+}
+
+body.dark header,
+body.dark footer,
+body.dark aside {
+  background-color: #0f172a !important;
+  border-color: #1e293b !important;
+}
+
+body.dark input,
+body.dark textarea {
+  background-color: #334155 !important;
+  color: white !important;
+  border-color: #475569 !important;
+}
+
+body.dark .bg-[#F9FAFB]/50,
+body.dark .bg-[#f0f2f5] {
+  background-color: #0f172a !important;
+}
+
+body.dark .hover\:bg-gray-50:hover,
+body.dark .hover\:bg-gray-100:hover {
+  background-color: #334155 !important;
+}
+
+body.dark .shadow-sm,
+body.dark .shadow-md,
+body.dark .shadow-lg {
+  shadow: none !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2) !important;
 }
 
 #root {

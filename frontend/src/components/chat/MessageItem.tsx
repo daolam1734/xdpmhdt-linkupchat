@@ -232,7 +232,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     }
                 }}
             >
-                <span className="text-[11px] text-gray-500 font-bold group-hover/name:text-blue-500 transition-colors">
+                <span className="text-[11px] text-gray-500 dark:text-gray-400 font-bold group-hover/name:text-blue-500 transition-colors">
                     {message.isBot ? "LinkUp AI" : message.senderName}
                 </span>
                 {message.isBot && (
@@ -249,11 +249,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             <div 
                 onClick={() => document.getElementById(`msg-${message.reply_to_id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
                 className={clsx(
-                "text-[12px] opacity-70 mb-[-8px] pb-3 px-3 pt-1.5 bg-gray-100/80 rounded-t-[18px] border-l-4 border-blue-500/50 max-w-[90%] truncate cursor-pointer hover:bg-gray-200/80 transition-all z-0",
+                "text-[12px] opacity-70 mb-[-8px] pb-3 px-3 pt-1.5 bg-gray-100/80 dark:bg-slate-700/80 rounded-t-[18px] border-l-4 border-blue-500/50 max-w-[90%] truncate cursor-pointer hover:bg-gray-200/80 transition-all z-0",
                 isMe ? "mr-1 items-end" : "ml-1 items-start"
             )}>
                 <span className="text-[10px] font-bold text-blue-600/70 block mb-0.5">Đang trả lời:</span>
-                <span className="italic">{message.reply_to_content || "Bản tin gốc không còn khả dụng"}</span>
+                <span className="italic dark:text-gray-100">{message.reply_to_content || "Bản tin gốc không còn khả dụng"}</span>
             </div>
         )}
 
@@ -268,11 +268,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 isMe
                     ? 'bg-blue-600 text-white shadow-sm'
                     : message.isBot 
-                        ? 'bg-white text-slate-800 border-2 border-blue-100 shadow-xl shadow-blue-500/10 ring-1 ring-blue-500/5'
-                        : 'bg-[#F0F2F5] text-black',
-                message.is_recalled && 'bg-gray-100 text-gray-400 italic border border-gray-200',
+                        ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-2 border-blue-100 dark:border-blue-900 shadow-xl shadow-blue-500/10 ring-1 ring-blue-500/5'
+                        : 'bg-[#F0F2F5] dark:bg-slate-800 text-black dark:text-white',
+                message.is_recalled && 'bg-gray-100 dark:bg-slate-700 text-gray-400 italic border border-gray-200 dark:border-slate-600',
                 // Viền màu xanh đặc trưng cho tin nhắn chỉ chứa ảnh hoặc tệp
-                message.file_url && !message.content && !message.is_recalled && 'bg-white border-2 border-blue-500 p-[2px] shadow-lg ring-1 ring-blue-500/10'
+                message.file_url && !message.content && !message.is_recalled && 'bg-white dark:bg-slate-800 border-2 border-blue-500 p-[2px] shadow-lg ring-1 ring-blue-500/10'
                 )}
             >
                 {message.is_forwarded && (

@@ -959,9 +959,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
         ) : (
           <div className="flex-1 flex overflow-hidden">
              {/* Main Chat Content */}
-             <div className="flex-1 flex flex-col relative bg-white overflow-hidden min-w-0">
+             <div className="flex-1 flex flex-col relative bg-white dark:bg-slate-900 overflow-hidden min-w-0">
                 {/* Header */}
-                <header className="h-[64px] border-b border-gray-100 px-4 flex items-center justify-between bg-white/90 backdrop-blur-md z-[50] shadow-sm shrink-0 sticky top-0">
+                <header className="h-[64px] border-b border-gray-100 dark:border-slate-800 px-4 flex items-center justify-between bg-white/90 dark:bg-slate-900/90 backdrop-blur-md z-[50] shadow-sm shrink-0 sticky top-0">
                   <div 
                     className="flex items-center space-x-2 px-2 py-1"
                   >

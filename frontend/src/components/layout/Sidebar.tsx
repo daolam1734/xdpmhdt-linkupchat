@@ -215,11 +215,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
 
     return (
-        <aside className="flex w-80 md:w-[360px] bg-white border-r border-gray-100 flex-col z-20 h-screen shrink-0 overflow-hidden shadow-sm">
+        <aside className="flex w-80 md:w-[360px] bg-white dark:bg-slate-900 border-r border-gray-100 dark:border-slate-800 flex-col z-20 h-screen shrink-0 overflow-hidden shadow-sm">
             {/* Header Area */}
             <div className="pt-4 pb-2">
                 <div className="flex items-center justify-between mb-3 px-4">
-                    <h1 className="text-xl font-black text-gray-900 tracking-tight cursor-pointer" onClick={() => setViewingUser(currentUser as any)}>LinkUp Chat</h1>
+                    <h1 className="text-xl font-black text-gray-900 dark:text-white tracking-tight cursor-pointer" onClick={() => setViewingUser(currentUser as any)}>LinkUp Chat</h1>
                     
                     <div className="flex items-center space-x-1.5">
                         <button 
@@ -275,7 +275,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         placeholder="Tìm kiếm trên LinkUp"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-[#f0f2f5] border-none rounded-full py-2.5 pl-10 pr-4 text-[14px] focus:ring-0 placeholder:text-gray-500 font-medium transition-all"
+                        className="w-full bg-[#f0f2f5] dark:bg-slate-800 dark:text-white border-none rounded-full py-2.5 pl-10 pr-4 text-[14px] focus:ring-0 placeholder:text-gray-500 font-medium transition-all"
                     />
                 </div>
 

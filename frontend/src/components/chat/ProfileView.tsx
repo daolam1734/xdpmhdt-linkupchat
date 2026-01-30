@@ -311,7 +311,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
     ), [contextAccess, aiStyle, isLoading, handleSave]);
 
     return (
-        <div className="flex-1 flex flex-col bg-white h-full animate-in fade-in duration-300 overflow-hidden">
+        <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 h-full animate-in fade-in duration-300 overflow-hidden">
             {/* Simple Navbar */}
             <div className="h-[56px] border-b border-gray-100 flex items-center px-4 shrink-0 bg-white">
                 <button 
