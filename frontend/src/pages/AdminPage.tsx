@@ -23,6 +23,7 @@ import { SupportTab } from './admin/SupportTab';
 import { ReportsTab } from './admin/ReportsTab';
 import { AIAssistantTab } from './admin/AIAssistantTab';
 import { UserEditModal } from './admin/UserEditModal';
+import { UserAddModal } from './admin/UserAddModal';
 
 export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { currentUser, logout } = useAuthStore();
@@ -36,10 +37,13 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [displaySearchTerm, setDisplaySearchTerm] = useState('');
+    const [processingIds, setProcessingIds] = useState<string[]>([]);
     const [filter, setFilter] = useState<'all' | 'active' | 'banned' | 'admin' | 'user'>('all');
     const { adminTab: activeTab, setAdminTab: setActiveTab } = useViewStore();
     const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
     const [editingUser, setEditingUser] = useState<User | null>(null);
+    const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
     const [showGoogleKey, setShowGoogleKey] = useState(false);
     const [showOpenAIKey, setShowOpenAIKey] = useState(false);
 
@@ -51,6 +55,14 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [sendingReply, setSendingReply] = useState(false);
 
     const { socket } = useChatStore();
+
+    // Debounce search term
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setSearchTerm(displaySearchTerm);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [displaySearchTerm]);
 
     useEffect(() => {
         if (activeTab !== 'support' || !socket) return;
@@ -242,17 +254,21 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         }
         
         if (window.confirm("Xác nhận xóa phòng chat này? Toàn bộ tin nhắn trong phòng sẽ bị mất vĩnh viễn.")) {
+            setProcessingIds(prev => [...prev, roomId]);
             try {
                 await api.delete(`/admin/rooms/${roomId}`);
                 setRooms(rooms.filter(r => r.id !== roomId));
                 toast.success("Đã xóa phòng chat");
             } catch (error) {
                 toast.error("Lỗi khi xóa phòng chat");
+            } finally {
+                setProcessingIds(prev => prev.filter(id => id !== roomId));
             }
         }
     };
 
     const handleToggleRoomLock = async (roomId: string) => {
+        setProcessingIds(prev => [...prev, roomId]);
         try {
             const res = await api.post(`/admin/rooms/${roomId}/toggle-lock`);
             const newLocked = res.data.is_locked;
@@ -260,6 +276,8 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             toast.success(newLocked ? "Đã khóa nhóm chat" : "Đã mở khóa nhóm chat");
         } catch (error) {
             toast.error("Lỗi khi thay đổi trạng thái khóa");
+        } finally {
+            setProcessingIds(prev => prev.filter(id => id !== roomId));
         }
     };
 
@@ -300,6 +318,17 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         fetchAdminData(true);
     };
 
+    const handleAddUser = async (userData: any) => {
+        try {
+            await api.post('/admin/users', userData);
+            toast.success('Tạo người dùng thành công');
+            setIsAddUserModalOpen(false);
+            fetchAdminData(true);
+        } catch (error: any) {
+            toast.error(error.response?.data?.detail || 'Lỗi khi tạo người dùng');
+        }
+    };
+
     const handleExportCSV = async () => {
         try {
             const response = await api.get('/admin/users/export', { responseType: 'blob' });
@@ -331,6 +360,7 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
     const confirmDeleteUser = async () => {
         if (!deletingUserId) return;
+        setProcessingIds(prev => [...prev, deletingUserId]);
         try {
             await api.delete(`/admin/users/${deletingUserId}`);
             setUsers(users.filter(u => u.id !== deletingUserId));
@@ -338,46 +368,60 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             setDeletingUserId(null);
         } catch (error) {
             toast.error("Lỗi khi xóa người dùng");
+        } finally {
+            setProcessingIds(prev => prev.filter(id => id !== deletingUserId));
         }
     };
 
     const handleToggleRole = async (userId: string, currentIsAdmin: boolean) => {
+        setProcessingIds(prev => [...prev, userId]);
         try {
             await api.patch(`/admin/users/${userId}/role`, null, { params: { is_admin: !currentIsAdmin } });
             setUsers(users.map(u => u.id === userId ? { ...u, is_superuser: !currentIsAdmin } : u));
             toast.success("Cập nhật vai trò thành công!");
         } catch (error) {
             toast.error("Lỗi khi cập nhật vai trò");
+        } finally {
+            setProcessingIds(prev => prev.filter(id => id !== userId));
         }
     };
 
     const handleToggleBan = async (userId: string) => {
+        setProcessingIds(prev => [...prev, userId]);
         try {
             await api.post(`/admin/users/${userId}/toggle-active`);
             setUsers(users.map(u => u.id === userId ? { ...u, is_active: !u.is_active } : u));
             toast.success("Đã cập nhật trạng thái hoạt động");
         } catch (error) {
             toast.error("Lỗi khi cập nhật trạng thái");
+        } finally {
+            setProcessingIds(prev => prev.filter(id => id !== userId));
         }
     };
 
     const handleForceLogout = async (userId: string) => {
+        setProcessingIds(prev => [...prev, userId]);
         try {
             await api.post(`/admin/users/${userId}/force-logout`);
             setUsers(users.map(u => u.id === userId ? { ...u, is_online: false } : u));
             toast.success("Đã yêu cầu đăng xuất bắt buộc");
         } catch (error) {
             toast.error("Lỗi khi force logout");
+        } finally {
+            setProcessingIds(prev => prev.filter(id => id !== userId));
         }
     };
 
     const handleResetStatus = async (userId: string) => {
+        setProcessingIds(prev => [...prev, userId]);
         try {
             await api.post(`/admin/users/${userId}/reset-status`);
             setUsers(users.map(u => u.id === userId ? { ...u, is_online: false } : u));
             toast.success("Đã reset trạng thái online");
         } catch (error) {
             toast.error("Lỗi khi reset trạng thái");
+        } finally {
+            setProcessingIds(prev => prev.filter(id => id !== userId));
         }
     };
 
@@ -414,12 +458,14 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 return (
                     <UsersTab 
                         users={users}
-                        searchTerm={searchTerm}
+                        searchTerm={displaySearchTerm}
+                        filterTerm={searchTerm}
                         filter={filter}
-                        onSearchChange={setSearchTerm}
+                        processingIds={processingIds}
+                        onSearchChange={setDisplaySearchTerm}
                         onFilterChange={setFilter}
                         onRefresh={() => fetchAdminData(true)}
-                        onAddUser={() => toast.error('Tính năng đang phát triển')}
+                        onAddUser={() => setIsAddUserModalOpen(true)}
                         onEditUser={setEditingUser}
                         onToggleRole={handleToggleRole}
                         onToggleBan={handleToggleBan}
@@ -433,8 +479,10 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 return (
                     <RoomsTab 
                         rooms={rooms}
-                        searchTerm={searchTerm}
-                        onSearchChange={setSearchTerm}
+                        searchTerm={displaySearchTerm}
+                        filterTerm={searchTerm}
+                        processingIds={processingIds}
+                        onSearchChange={setDisplaySearchTerm}
                         onRefresh={() => fetchAdminData(true)}
                         onToggleLock={handleToggleRoomLock}
                         onDelete={handleDeleteRoom}
@@ -573,6 +621,13 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     user={editingUser} 
                     onClose={() => setEditingUser(null)} 
                     onSave={handleSaveUserEdit} 
+                />
+            )}
+
+            {isAddUserModalOpen && (
+                <UserAddModal 
+                    onClose={() => setIsAddUserModalOpen(false)}
+                    onSave={handleAddUser}
                 />
             )}
 

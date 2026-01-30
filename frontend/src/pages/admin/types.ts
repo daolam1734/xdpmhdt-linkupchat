@@ -125,7 +125,9 @@ export interface OverviewTabProps {
 export interface UsersTabProps {
     users: User[];
     searchTerm: string;
+    filterTerm?: string;
     filter: 'all' | 'active' | 'banned' | 'admin' | 'user';
+    processingIds?: string[];
     onSearchChange: (val: string) => void;
     onFilterChange: (val: any) => void;
     onRefresh: () => void;
@@ -142,6 +144,8 @@ export interface UsersTabProps {
 export interface RoomsTabProps {
     rooms: Room[];
     searchTerm: string;
+    filterTerm?: string;
+    processingIds?: string[];
     onSearchChange: (val: string) => void;
     onRefresh: () => void;
     onToggleLock: (roomId: string) => void;

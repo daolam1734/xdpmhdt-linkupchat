@@ -1,40 +1,43 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
     Users, Search, Trash2, 
     Hash, Lock, Unlock, Globe, MessageSquare, 
     ShieldAlert, RefreshCw, Archive, CheckCircle2,
-    AlertCircle, FileText
+    AlertCircle, FileText, Loader2
 } from 'lucide-react';
 import type { RoomsTabProps } from './types';
 
 export const RoomsTab: React.FC<RoomsTabProps> = ({
-    rooms, searchTerm, onSearchChange, onRefresh, onToggleLock, onDelete, onCleanup
+    rooms, searchTerm, filterTerm, processingIds = [], onSearchChange, onRefresh, onToggleLock, onDelete, onCleanup
 }) => {
     const [roomFilter, setRoomFilter] = React.useState<'all' | 'public' | 'private' | 'locked' | 'empty'>('all');
 
-    // Calculate quick stats
-    const stats = {
+    // Calculate quick stats - memoized for performance
+    const stats = useMemo(() => ({
         total: rooms.length,
         public: rooms.filter(r => !r.is_private).length,
         private: rooms.filter(r => r.is_private).length,
         locked: rooms.filter(r => r.is_locked).length,
         empty: rooms.filter(r => r.member_count === 0).length
-    };
+    }), [rooms]);
 
-    const filteredRooms = rooms.filter(r => {
-        const matchesSearch = r.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                             r.id.toLowerCase().includes(searchTerm.toLowerCase());
-        
-        if (!matchesSearch) return false;
-        
-        switch (roomFilter) {
-            case 'public': return !r.is_private;
-            case 'private': return r.is_private;
-            case 'locked': return r.is_locked;
-            case 'empty': return r.member_count === 0;
-            default: return true;
-        }
-    });
+    const filteredRooms = useMemo(() => {
+        const lowerSearch = (filterTerm ?? searchTerm).toLowerCase();
+        return rooms.filter(r => {
+            const matchesSearch = r.name.toLowerCase().includes(lowerSearch) || 
+                                 r.id.toLowerCase().includes(lowerSearch);
+            
+            if (!matchesSearch) return false;
+            
+            switch (roomFilter) {
+                case 'public': return !r.is_private;
+                case 'private': return r.is_private;
+                case 'locked': return r.is_locked;
+                case 'empty': return r.member_count === 0;
+                default: return true;
+            }
+        });
+    }, [rooms, roomFilter, filterTerm, searchTerm]);
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -200,14 +203,17 @@ export const RoomsTab: React.FC<RoomsTabProps> = ({
                                                 </button>
                                                 <button 
                                                     onClick={() => onToggleLock(r.id)}
+                                                    disabled={processingIds.includes(r.id)}
                                                     title={r.is_locked ? "Mở khóa nhóm" : "Khóa nhóm vi phạm"}
-                                                    className={`p-2 rounded-xl transition-all border border-transparent ${
+                                                    className={`p-2 rounded-xl transition-all border border-transparent disabled:opacity-50 ${
                                                         r.is_locked 
                                                         ? 'text-emerald-600 hover:bg-emerald-50 hover:border-emerald-100' 
                                                         : 'text-amber-600 hover:bg-amber-50 hover:border-amber-100'
                                                     } group/btn`}
                                                 >
-                                                    {r.is_locked ? (
+                                                    {processingIds.includes(r.id) ? (
+                                                        <Loader2 size={18} className="animate-spin" />
+                                                    ) : r.is_locked ? (
                                                         <Unlock size={18} className="transition-transform group-hover/btn:scale-110" />
                                                     ) : (
                                                         <ShieldAlert size={18} className="transition-transform group-hover/btn:scale-110" />
@@ -215,10 +221,15 @@ export const RoomsTab: React.FC<RoomsTabProps> = ({
                                                 </button>
                                                 <button 
                                                     onClick={() => onDelete(r.id)}
+                                                    disabled={processingIds.includes(r.id)}
                                                     title="Xóa nhóm"
-                                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-transparent hover:border-rose-100 group/btn"
+                                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-transparent hover:border-rose-100 group/btn disabled:opacity-50"
                                                 >
-                                                    <Trash2 size={18} className="transition-transform group-hover/btn:scale-110" />
+                                                    {processingIds.includes(r.id) ? (
+                                                        <Loader2 size={18} className="animate-spin" />
+                                                    ) : (
+                                                        <Trash2 size={18} className="transition-transform group-hover/btn:scale-110" />
+                                                    )}
                                                 </button>
                                             </div>
                                         </td>

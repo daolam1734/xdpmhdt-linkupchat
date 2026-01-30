@@ -445,7 +445,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                         </button>
                     ) : (activeRoom.type === 'group' || activeRoom.type === 'private') && !isSpecialRoom && (
                         <button 
-                            onClick={() => toast.success("Tính năng thêm thành viên đang được phát triển")}
+                            onClick={() => setIsAddMemberModalOpen(true)}
                             className="flex flex-col items-center space-y-1.5 group"
                         >
                             <div className="p-2.5 bg-gray-100 rounded-full group-hover:bg-gray-200 transition-all text-gray-700">

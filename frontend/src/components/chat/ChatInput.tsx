@@ -178,9 +178,20 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+    const enterToSend = currentUser?.app_settings?.enter_to_send ?? true;
+    
+    if (e.key === 'Enter') {
+      if (enterToSend) {
+        if (!e.shiftKey) {
+          e.preventDefault();
+          handleSend();
+        }
+      } else {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          handleSend();
+        }
+      }
     }
   };
 

@@ -50,6 +50,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
     const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
     const [detailedUser, setDetailedUser] = useState<any>(null);
 
+    // Settings States
+    const [theme, setTheme] = useState<'light' | 'dark'>('light');
+    const [language, setLanguage] = useState<'vi' | 'en'>('vi');
+    const [notifications, setNotifications] = useState(true);
+    const [enterToSend, setEnterToSend] = useState(true);
+    const [readReceipts, setReadReceipts] = useState(true);
+    const [contextAccess, setContextAccess] = useState(true);
+    const [aiStyle, setAiStyle] = useState<'NGẮN GỌN' | 'TIÊU CHUẨN' | 'CHI TIẾT'>('TIÊU CHUẨN');
+
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Fetch detailed user info if viewing someone else
@@ -84,13 +93,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
         setBlockedByOther(isCurrentlyBlockedByOther);
     }, [currentUser?.blocked_users, currentUser?.blocked_by, initialTarget?.id, isOwnProfile]);
 
-    // Settings States
-    const [theme, setTheme] = useState<'light' | 'dark'>('light');
-    const [language, setLanguage] = useState<'vi' | 'en'>('vi');
-    const [notifications, setNotifications] = useState(true);
-    const [contextAccess, setContextAccess] = useState(true);
-    const [aiStyle, setAiStyle] = useState<'NGẮN GỌN' | 'TIÊU CHUẨN' | 'CHI TIẾT'>('TIÊU CHUẨN');
-
     // Reset local state when target user changes (e.g. switching between profiles)
     useEffect(() => {
         if (initialTarget) {
@@ -112,6 +114,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
             setTheme(initialTarget.app_settings?.theme || 'light');
             setLanguage(initialTarget.app_settings?.language || 'vi');
             setNotifications(initialTarget.app_settings?.notifications ?? true);
+            setEnterToSend(initialTarget.app_settings?.enter_to_send ?? true);
+            setReadReceipts(initialTarget.app_settings?.read_receipts ?? true);
             setContextAccess(initialTarget.ai_settings?.context_access ?? true);
             
             const style = initialTarget.ai_preferences?.preferred_style;
@@ -138,6 +142,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
                     theme: theme as 'light' | 'dark',
                     language: language as 'vi' | 'en',
                     notifications,
+                    enter_to_send: enterToSend,
+                    read_receipts: readReceipts,
                     profile: {
                         work,
                         education,
@@ -289,10 +295,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
             setLanguage={setLanguage}
             notifications={notifications}
             setNotifications={setNotifications}
+            enterToSend={enterToSend}
+            setEnterToSend={setEnterToSend}
+            readReceipts={readReceipts}
+            setReadReceipts={setReadReceipts}
             handleSave={handleSave}
             logout={logout}
         />
-    ), [theme, language, notifications, logout, handleSave]);
+    ), [theme, language, notifications, enterToSend, readReceipts, logout, handleSave]);
 
     const aiContent = useMemo(() => (
         <AITab 

@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
     Users, Search, Download, Shield, RefreshCw, 
-    Trash2, LogOut, Edit
+    Trash2, LogOut, Edit, Loader2
 } from 'lucide-react';
 import type { UsersTabProps } from './types';
 import { Avatar } from '../../components/common/Avatar';
@@ -9,18 +9,23 @@ import { Avatar } from '../../components/common/Avatar';
 export const UsersTab: React.FC<UsersTabProps> = ({
     users, filter, onFilterChange, searchTerm, onSearchChange,
     onRefresh, onAddUser, onEditUser, onToggleRole, onDeleteUser, 
-    onExportCSV, onToggleBan, onForceLogout, onResetStatus
+    onExportCSV, onToggleBan, onForceLogout, onResetStatus,
+    processingIds = [], filterTerm
 }) => {
-    const filteredUsers = users.filter(u => {
-        const matchesSearch = u.username.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                             u.id.toLowerCase().includes(searchTerm.toLowerCase());
-        
-        if (filter === 'admin') return matchesSearch && u.is_superuser;
-        if (filter === 'user') return matchesSearch && !u.is_superuser;
-        if (filter === 'banned') return matchesSearch && !u.is_active;
-        if (filter === 'active') return matchesSearch && u.is_active;
-        return matchesSearch;
-    });
+    const filteredUsers = useMemo(() => {
+        const lowerSearch = (filterTerm ?? searchTerm).toLowerCase();
+        return users.filter(u => {
+            const matchesSearch = u.username.toLowerCase().includes(lowerSearch) || 
+                                 u.id.toLowerCase().includes(lowerSearch) ||
+                                 (u.full_name || '').toLowerCase().includes(lowerSearch);
+            
+            if (filter === 'admin') return matchesSearch && u.is_superuser;
+            if (filter === 'user') return matchesSearch && !u.is_superuser;
+            if (filter === 'banned') return matchesSearch && !u.is_active;
+            if (filter === 'active') return matchesSearch && u.is_active;
+            return matchesSearch;
+        });
+    }, [users, filter, filterTerm, searchTerm]);
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -144,13 +149,19 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                                     <td className="px-6 py-4">
                                         <button 
                                             onClick={() => onToggleRole(u.id, u.is_superuser)}
+                                            disabled={processingIds.includes(u.id)}
                                             className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all ${
+                                                processingIds.includes(u.id) ? 'opacity-50 cursor-wait' :
                                                 u.is_superuser 
                                                 ? 'bg-indigo-50 text-indigo-700 border-indigo-100 shadow-sm shadow-indigo-100' 
                                                 : 'bg-slate-50 text-slate-500 border-slate-200'
                                             }`}
                                         >
-                                            <Shield size={12} className={u.is_superuser ? 'text-indigo-600' : 'text-slate-400'} />
+                                            {processingIds.includes(u.id) ? (
+                                                <Loader2 size={12} className="animate-spin" />
+                                            ) : (
+                                                <Shield size={12} className={u.is_superuser ? 'text-indigo-600' : 'text-slate-400'} />
+                                            )}
                                             <span>{u.is_superuser ? 'Admin' : 'User'}</span>
                                         </button>
                                     </td>
@@ -158,15 +169,20 @@ export const UsersTab: React.FC<UsersTabProps> = ({
                                         <div className="flex items-center justify-end space-x-1">
                                             <button 
                                                 onClick={() => onToggleBan(u.id)}
-                                                className={`p-2 rounded-xl transition-all ${u.is_active ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50' : 'text-rose-600 bg-rose-50 hover:bg-emerald-50 hover:text-emerald-600'}`}
+                                                disabled={processingIds.includes(u.id)}
+                                                className={`p-2 rounded-xl transition-all ${
+                                                    processingIds.includes(u.id) ? 'opacity-50 cursor-wait' :
+                                                    u.is_active ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50' : 'text-rose-600 bg-rose-50 hover:bg-emerald-50 hover:text-emerald-600'
+                                                }`}
                                                 title={u.is_active ? "Chặn tài khoản" : "Bỏ chặn tài khoản"}
                                             >
-                                                <Shield size={18} />
+                                                {processingIds.includes(u.id) ? <Loader2 size={18} className="animate-spin" /> : <Shield size={18} />}
                                             </button>
                                             
                                             <button 
                                                 onClick={() => onForceLogout(u.id)}
-                                                className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all"
+                                                disabled={processingIds.includes(u.id)}
+                                                className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all disabled:opacity-50"
                                                 title="Đăng xuất bắt buộc"
                                             >
                                                 <LogOut size={18} />
@@ -174,7 +190,8 @@ export const UsersTab: React.FC<UsersTabProps> = ({
 
                                             <button 
                                                 onClick={() => onResetStatus(u.id)}
-                                                className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-xl transition-all"
+                                                disabled={processingIds.includes(u.id)}
+                                                className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-xl transition-all disabled:opacity-50"
                                                 title="Reset trạng thái Offline"
                                             >
                                                 <RefreshCw size={18} />
@@ -182,7 +199,8 @@ export const UsersTab: React.FC<UsersTabProps> = ({
 
                                             <button 
                                                 onClick={() => onEditUser(u)}
-                                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                                                disabled={processingIds.includes(u.id)}
+                                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all disabled:opacity-50"
                                                 title="Chỉnh sửa thông tin"
                                             >
                                                 <Edit size={18} />
@@ -190,7 +208,8 @@ export const UsersTab: React.FC<UsersTabProps> = ({
 
                                             <button 
                                                 onClick={() => onDeleteUser(u.id)}
-                                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                                                disabled={processingIds.includes(u.id)}
+                                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all disabled:opacity-50"
                                                 title="Xóa vĩnh viễn"
                                             >
                                                 <Trash2 size={18} />
