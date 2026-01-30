@@ -1,6 +1,6 @@
 import React from 'react';
 import { 
-    Sun, Moon, Languages, Bell, LogOut, Send, Eye, Volume2
+    Sun, Moon, Languages, Bell, LogOut, Send, ShieldCheck
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
@@ -14,8 +14,6 @@ interface AppSettingsTabProps {
     setNotifications: (val: boolean) => void;
     enterToSend: boolean;
     setEnterToSend: (val: boolean) => void;
-    readReceipts: boolean;
-    setReadReceipts: (val: boolean) => void;
     handleSave: () => void;
     logout: () => void;
 }
@@ -29,18 +27,34 @@ export const AppSettingsTab: React.FC<AppSettingsTabProps> = ({
     setNotifications,
     enterToSend,
     setEnterToSend,
-    readReceipts,
-    setReadReceipts,
     handleSave,
     logout
 }) => {
+    const handleNotificationToggle = () => {
+        if (!notifications && "Notification" in window) {
+            Notification.requestPermission().then(permission => {
+                if (permission === "granted") {
+                    setNotifications(true);
+                    toast.success("Đã bật thông báo hệ thống");
+                } else {
+                    toast.error("Vui lòng cấp quyền thông báo trong cài đặt trình duyệt");
+                }
+            });
+        } else {
+            setNotifications(!notifications);
+        }
+    };
+
     return (
-        <div className="animate-in fade-in slide-in-from-right-4 duration-500 py-8 space-y-8 px-4 max-w-2xl mx-auto">
+        <div className="animate-in fade-in slide-in-from-right-4 duration-500 py-8 space-y-8 px-4 max-w-2xl mx-auto pb-24">
             <section className="space-y-4">
                 <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Giao diện (Theme)</label>
                 <div className="grid grid-cols-2 gap-4">
                     <button 
-                        onClick={() => setTheme('light')}
+                        onClick={() => {
+                            setTheme('light');
+                            document.body.classList.remove('dark');
+                        }}
                         className={clsx(
                             "flex flex-col items-center p-6 rounded-[24px] transition-all group",
                             theme === 'light' ? "bg-white border-2 border-blue-600 shadow-xl shadow-blue-50" : "bg-gray-50 border-2 border-transparent opacity-60 hover:opacity-100"
@@ -52,6 +66,7 @@ export const AppSettingsTab: React.FC<AppSettingsTabProps> = ({
                     <button 
                         onClick={() => {
                             setTheme('dark');
+                            document.body.classList.add('dark');
                         }}
                         className={clsx(
                             "flex flex-col items-center p-6 rounded-[24px] transition-all group",
@@ -65,7 +80,7 @@ export const AppSettingsTab: React.FC<AppSettingsTabProps> = ({
             </section>
 
             <section className="space-y-4">
-                <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Cài đặt trò chuyện</label>
+                <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Cấu hình tính năng</label>
                 <div className="bg-white border border-gray-100 rounded-[24px] overflow-hidden divide-y divide-gray-50 shadow-sm">
                     {/* Enter to Send */}
                     <div className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setEnterToSend(!enterToSend)}>
@@ -75,7 +90,7 @@ export const AppSettingsTab: React.FC<AppSettingsTabProps> = ({
                             </div>
                             <div className="flex flex-col">
                                 <span className="text-[15px] font-bold text-gray-700">Phím Enter để gửi</span>
-                                <span className="text-xs text-gray-400">Tắt để nhấn Ctrl+Enter (hoặc nút Gửi) để gửi</span>
+                                <span className="text-xs text-gray-400">Điều chỉnh hành vi phím Enter trong khung chat</span>
                             </div>
                         </div>
                         <div className={clsx(
@@ -89,41 +104,15 @@ export const AppSettingsTab: React.FC<AppSettingsTabProps> = ({
                         </div>
                     </div>
 
-                    {/* Read Receipts */}
-                    <div className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setReadReceipts(!readReceipts)}>
-                        <div className="flex items-center space-x-4">
-                            <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center text-green-600">
-                                <Eye size={20} />
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-[15px] font-bold text-gray-700">Trạng thái "Đã xem"</span>
-                                <span className="text-xs text-gray-400">Cho người khác biết bạn đã đọc tin nhắn</span>
-                            </div>
-                        </div>
-                        <div className={clsx(
-                            "w-12 h-6 rounded-full relative transition-all duration-300",
-                            readReceipts ? "bg-green-600" : "bg-gray-200"
-                        )}>
-                            <div className={clsx(
-                                "absolute w-4 h-4 bg-white rounded-full shadow-md transition-all top-1",
-                                readReceipts ? "left-7" : "left-1"
-                            )} />
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <section className="space-y-4">
-                <label className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Hệ thống & Ngôn ngữ</label>
-                <div className="bg-white border border-gray-100 rounded-[24px] overflow-hidden divide-y divide-gray-50 shadow-sm">
+                    {/* Language Settings */}
                     <div className="flex items-center justify-between p-5">
                         <div className="flex items-center space-x-4">
                             <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600">
                                 <Languages size={20} />
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-[15px] font-bold text-gray-700">Ngôn ngữ hiển thị</span>
-                                <span className="text-xs text-gray-400">Thay đổi ngôn ngữ toàn hệ thống</span>
+                                <span className="text-[15px] font-bold text-gray-700">Ngôn ngữ AI & Hệ thống</span>
+                                <span className="text-xs text-gray-400">Thay đổi ngôn ngữ phản hồi từ trợ lý</span>
                             </div>
                         </div>
                         <select 
@@ -136,14 +125,15 @@ export const AppSettingsTab: React.FC<AppSettingsTabProps> = ({
                         </select>
                     </div>
 
-                    <div className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setNotifications(!notifications)}>
+                    {/* Notifications Toggle */}
+                    <div className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 transition-colors" onClick={handleNotificationToggle}>
                         <div className="flex items-center space-x-4">
                             <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600">
-                                <Volume2 size={20} />
+                                <Bell size={20} />
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-[15px] font-bold text-gray-700">Thông báo & Âm thanh</span>
-                                <span className="text-xs text-gray-400">Nhận thông báo khi có tin nhắn mới</span>
+                                <span className="text-[15px] font-bold text-gray-700">Thông báo trình duyệt</span>
+                                <span className="text-xs text-gray-400">Nhận cảnh báo ngay cả khi không ở tab chat</span>
                             </div>
                         </div>
                         <div className={clsx(
@@ -162,15 +152,16 @@ export const AppSettingsTab: React.FC<AppSettingsTabProps> = ({
             <div className="flex flex-col space-y-4 pt-4">
                 <button 
                     onClick={() => handleSave()}
-                    className="w-full py-5 bg-blue-600 text-white rounded-[24px] font-bold text-[15px] hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 active:scale-[0.98]"
+                    className="w-full py-5 bg-blue-600 text-white rounded-[24px] font-bold text-[15px] hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 active:scale-[0.98] flex items-center justify-center space-x-2"
                 >
-                    Lưu các thay đổi
+                    <ShieldCheck size={20} />
+                    <span>Lưu cấu hình & Áp dụng</span>
                 </button>
 
                 <button 
                     onClick={() => {
                         logout();
-                        toast.success("Hẹn gặp lại bạn!");
+                        toast.success("Đã đăng xuất an toàn");
                     }}
                     className="w-full flex items-center justify-center space-x-3 py-5 text-red-600 font-bold text-[15px] hover:bg-red-50 rounded-[24px] transition-all"
                 >

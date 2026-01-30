@@ -55,7 +55,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
     const [language, setLanguage] = useState<'vi' | 'en'>('vi');
     const [notifications, setNotifications] = useState(true);
     const [enterToSend, setEnterToSend] = useState(true);
-    const [readReceipts, setReadReceipts] = useState(true);
     const [contextAccess, setContextAccess] = useState(true);
     const [aiStyle, setAiStyle] = useState<'NGẮN GỌN' | 'TIÊU CHUẨN' | 'CHI TIẾT'>('TIÊU CHUẨN');
 
@@ -115,7 +114,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
             setLanguage(initialTarget.app_settings?.language || 'vi');
             setNotifications(initialTarget.app_settings?.notifications ?? true);
             setEnterToSend(initialTarget.app_settings?.enter_to_send ?? true);
-            setReadReceipts(initialTarget.app_settings?.read_receipts ?? true);
             setContextAccess(initialTarget.ai_settings?.context_access ?? true);
             
             const style = initialTarget.ai_preferences?.preferred_style;
@@ -143,7 +141,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
                     language: language as 'vi' | 'en',
                     notifications,
                     enter_to_send: enterToSend,
-                    read_receipts: readReceipts,
                     profile: {
                         work,
                         education,
@@ -297,12 +294,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, onBack }) => {
             setNotifications={setNotifications}
             enterToSend={enterToSend}
             setEnterToSend={setEnterToSend}
-            readReceipts={readReceipts}
-            setReadReceipts={setReadReceipts}
             handleSave={handleSave}
             logout={logout}
         />
-    ), [theme, language, notifications, enterToSend, readReceipts, logout, handleSave]);
+    ), [theme, language, notifications, enterToSend, logout, handleSave]);
 
     const aiContent = useMemo(() => (
         <AITab 

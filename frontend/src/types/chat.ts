@@ -24,6 +24,7 @@ export interface User {
     theme?: 'light' | 'dark';
     language?: 'vi' | 'en';
     notifications?: boolean;
+    enter_to_send?: boolean;
     profile?: {
       work?: string;
       education?: string;
