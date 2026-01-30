@@ -3,7 +3,9 @@ import { persist } from 'zustand/middleware';
 import type { Message, Room, User } from '../types/chat';
 import { chatService } from '../services/chat.service';
 import { useAuthStore } from './useAuthStore';
+import { useViewStore } from './useViewStore';
 import { toast } from 'react-hot-toast';
+import { MessageNotification } from '../components/common/MessageNotification';
 
 interface ChatState {
     rooms: Room[];
@@ -348,8 +350,41 @@ export const useChatStore = create<ChatState>()(
                                 reply_to_id: data.reply_to_id,
                                 reply_to_content: data.reply_to_content
                             };
+
+                            console.log("📩 Mới nhận tin nhắn:", msgData.content, "từ", msgData.senderName);
                             get().addMessage(msgData);
                         
+                            // Hiển thị thông báo nổi nếu:
+                            // 1. Không phải tin nhắn của mình
+                            // 2. Không đang ở trong phòng đó
+                            const currentUser = useAuthStore.getState().currentUser;
+                            const isMe = String(data.sender_id) === String(currentUserId);
+                            const isActiveRoom = String(get().activeRoom?.id) === String(data.room_id);
+
+                            console.log("🔔 KT Thông báo:", { isMe, isActiveRoom, notiSetting: currentUser?.app_settings?.notifications });
+
+                            if (!isMe && !isActiveRoom && currentUser?.app_settings?.notifications !== false) {
+                                console.log("✨ Đang hiển thị toast...");
+                                toast.custom((t) => (
+                                    <MessageNotification
+                                        t={t}
+                                        senderName={msgData.senderName || 'Người dùng'}
+                                        senderAvatar={msgData.senderAvatar}
+                                        content={msgData.content || (msgData.file_type === 'image' ? '[Hình ảnh]' : '[Tập tin]')}
+                                        onClick={() => {
+                                            const room = get().rooms.find(r => String(r.id) === String(data.room_id));
+                                            if (room) {
+                                                get().setActiveRoom(room);
+                                                useViewStore.getState().setView('chat');
+                                            }
+                                        }}
+                                    />
+                                ), { 
+                                    duration: 5000,
+                                    position: 'bottom-right' 
+                                });
+                            }
+
                             // Auto read receipt for active room
                             if (get().activeRoom?.id === data.room_id && data.sender_id !== currentUserId) {
                                 get().sendReadReceipt(data.room_id, data.message_id);
@@ -446,7 +481,7 @@ export const useChatStore = create<ChatState>()(
                         break;
                     case 'member_left':
                         if (get().activeRoom?.id === data.room_id) {
-                            if (data.user_id === get().currentUser?.id) {
+                            if (data.user_id === useAuthStore.getState().currentUser?.id) {
                                 // I was kicked or I left
                                 set({ activeRoom: null, roomMembers: [] });
                                 toast.error("Bạn đã không còn ở trong phòng này");
@@ -457,7 +492,7 @@ export const useChatStore = create<ChatState>()(
                             }
                         }
                         // Also update rooms list (remove if it was me)
-                        if (data.user_id === get().currentUser?.id) {
+                        if (data.user_id === useAuthStore.getState().currentUser?.id) {
                             set(state => ({
                                 rooms: state.rooms.filter(r => r.id !== data.room_id)
                             }));
