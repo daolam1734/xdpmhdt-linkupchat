@@ -223,10 +223,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
             <>
                 {/* Pending File Preview ABOVE input row */}
                 {pendingFile && (
-                    <div className="mx-2 mb-2 p-2 bg-gray-50 rounded-xl border border-gray-100 flex items-center group animate-in slide-in-from-bottom-2 duration-200">
+                    <div className="mx-2 mb-2 p-2 bg-gray-50 dark:bg-[#242526] rounded-xl border border-gray-100 dark:border-[#3e4042] flex items-center group animate-in slide-in-from-bottom-2 duration-200">
                         <div className="relative">
                             {pendingFile.type === 'image' ? (
-                                <div className="w-12 h-12 rounded-lg overflow-hidden border border-gray-200 bg-white">
+                                <div className="w-12 h-12 rounded-lg overflow-hidden border border-gray-200 dark:border-[#3e4042] bg-white dark:bg-[#3a3b3c]">
                                     <img 
                                         src={pendingFile.url} 
                                         alt="Preview" 
@@ -234,21 +234,21 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
                                     />
                                 </div>
                             ) : (
-                                <div className="w-12 h-12 rounded-lg border border-gray-200 bg-white flex flex-col items-center justify-center">
+                                <div className="w-12 h-12 rounded-lg border border-gray-200 dark:border-[#3e4042] bg-white dark:bg-[#3a3b3c] flex flex-col items-center justify-center">
                                     <FileText size={20} className="text-blue-500" />
                                 </div>
                             )}
                             <button 
                                 onClick={handleRemovePendingFile}
-                                className="absolute -top-2 -right-2 p-1 bg-white text-gray-500 rounded-full shadow-md hover:bg-red-50 hover:text-red-500 transition-all duration-200 border border-gray-100"
+                                className="absolute -top-2 -right-2 p-1 bg-white dark:bg-[#3a3b3c] text-gray-500 dark:text-[#b0b3b8] rounded-full shadow-md hover:bg-red-50 hover:text-red-500 transition-all duration-200 border border-gray-100 dark:border-[#4b4c4f]"
                                 title="Xóa tệp"
                             >
                                 <X size={12} />
                             </button>
                         </div>
                         <div className="ml-3 flex-1 min-w-0">
-                            <p className="text-[13px] font-medium text-gray-700 truncate">{pendingFile.filename}</p>
-                            <p className="text-[11px] text-gray-400 uppercase font-bold tracking-tighter">
+                            <p className="text-[13px] font-medium text-gray-700 dark:text-gray-200 truncate">{pendingFile.filename}</p>
+                            <p className="text-[11px] text-gray-400 dark:text-[#b0b3b8] uppercase font-bold tracking-tighter">
                                 {pendingFile.filename.split('.').pop()} file • Ready to send
                             </p>
                         </div>
@@ -257,27 +257,27 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
 
                 {/* Reply/Edit Bar Aboverounded input */}
                 {(replyingTo || editingMessage) && (
-                    <div className="mx-2 mb-2 flex items-center justify-between px-3 py-2 bg-gray-50 rounded-xl border border-gray-100 animate-in slide-in-from-bottom-2 duration-200">
+                    <div className="mx-2 mb-2 flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-[#242526] rounded-xl border border-gray-100 dark:border-[#3e4042] animate-in slide-in-from-bottom-2 duration-200">
                         <div className="flex items-center space-x-2 overflow-hidden">
                             <div className="text-blue-500 flex-shrink-0">
                                 {replyingTo ? <Reply size={16} /> : <Edit2 size={16} />}
                             </div>
                             <div className="flex flex-col overflow-hidden">
-                                <span className="text-[12px] font-semibold text-gray-700">
+                                <span className="text-[12px] font-semibold text-gray-700 dark:text-gray-200">
                                     {replyingTo ? (
                                         (activeRoom?.id === 'help' && (currentUser?.is_superuser || currentUser?.role === 'admin'))
                                         ? `Hỗ trợ khách hàng: ${(!replyingTo.isBot ? replyingTo.senderName : 'Người dùng đang chờ')}`
                                         : `Đang trả lời ${replyingTo.senderName}`
                                     ) : "Đang sửa tin nhắn"}
                                 </span>
-                                <span className="text-[11px] text-gray-500 truncate">
+                                <span className="text-[11px] text-gray-500 dark:text-[#b0b3b8] truncate">
                                     {replyingTo ? replyingTo.content : editingMessage?.content}
                                 </span>
                             </div>
                         </div>
                         <button 
                             onClick={handleCancelAction}
-                            className="p-1 hover:bg-gray-200 rounded-full transition-colors duration-200"
+                            className="p-1 hover:bg-gray-200 dark:hover:bg-[#3a3b3c] rounded-full transition-colors duration-200"
                         >
                             <X size={16} className="text-gray-500" />
                         </button>

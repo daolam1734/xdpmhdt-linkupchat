@@ -947,21 +947,21 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
             onBack={() => setViewingUser(null)} 
           />
         ) : !activeRoom ? (
-          <div className="flex-1 flex flex-col items-center justify-center bg-white">
-            <div className="w-32 h-32 bg-blue-600 rounded-[32px] flex items-center justify-center mb-8 shadow-2xl shadow-blue-100 transform -rotate-6 animate-in zoom-in duration-500">
+          <div className="flex-1 flex flex-col items-center justify-center bg-white dark:bg-[#1a1a1a]">
+            <div className="w-32 h-32 bg-blue-600 rounded-[32px] flex items-center justify-center mb-8 shadow-2xl shadow-blue-100 dark:shadow-none transform -rotate-6 animate-in zoom-in duration-500">
                 <MessageCircle size={64} className="text-white fill-white" />
             </div>
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-3">Chào mừng bạn đến với LinkUp</h2>
-            <p className="text-slate-500 font-medium max-w-sm text-center text-lg leading-relaxed">
+            <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight mb-3">Chào mừng bạn đến với LinkUp</h2>
+            <p className="text-slate-500 dark:text-[#b0b3b8] font-medium max-w-sm text-center text-lg leading-relaxed">
                 Chọn một cuộc trò chuyện từ danh sách bên trái để bắt đầu nhắn tin.
             </p>
           </div>
         ) : (
           <div className="flex-1 flex overflow-hidden">
              {/* Main Chat Content */}
-             <div className="flex-1 flex flex-col relative bg-white dark:bg-slate-900 overflow-hidden min-w-0">
+             <div className="flex-1 flex flex-col relative bg-white dark:bg-[#1a1a1a] overflow-hidden min-w-0">
                 {/* Header */}
-                <header className="h-[64px] border-b border-gray-100 dark:border-slate-800 px-4 flex items-center justify-between bg-white/90 dark:bg-slate-900/90 backdrop-blur-md z-[50] shadow-sm shrink-0 sticky top-0">
+                <header className="h-[64px] border-b border-gray-100 dark:border-[#3e4042] px-4 flex items-center justify-between bg-white/90 dark:bg-[#242526]/90 backdrop-blur-md z-[50] shadow-sm shrink-0 sticky top-0">
                   <div 
                     className="flex items-center space-x-2 px-2 py-1"
                   >
@@ -972,7 +972,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                         size="md" 
                     />
                     <div>
-                      <h1 className="text-[16px] font-bold text-black leading-tight">
+                      <h1 className="text-[16px] font-bold text-black dark:text-white leading-tight">
                         {activeRoom.name}
                       </h1>
                       <div className="flex items-center">

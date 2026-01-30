@@ -215,7 +215,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
 
     return (
-        <aside className="flex w-80 md:w-[360px] bg-white dark:bg-slate-900 border-r border-gray-100 dark:border-slate-800 flex-col z-20 h-screen shrink-0 overflow-hidden shadow-sm">
+        <aside className="flex w-80 md:w-[360px] bg-white dark:bg-[#242526] border-r border-gray-100 dark:border-[#3e4042] flex-col z-20 h-screen shrink-0 overflow-hidden shadow-sm">
             {/* Header Area */}
             <div className="pt-4 pb-2">
                 <div className="flex items-center justify-between mb-3 px-4">
@@ -227,7 +227,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 const searchInput = document.querySelector('input[placeholder="Tìm kiếm trên LinkUp"]') as HTMLInputElement;
                                 if (searchInput) searchInput.focus();
                             }}
-                            className="p-2 bg-gray-100/50 text-gray-600 rounded-full hover:bg-gray-100 transition-all active:scale-95"
+                            className="p-2 bg-gray-100/50 dark:bg-[#3a3b3c] text-gray-600 dark:text-[#b0b3b8] rounded-full hover:bg-gray-100 dark:hover:bg-[#4b4c4f] transition-all active:scale-95"
                             title="Thêm bạn bè"
                         >
                             <UserPlus size={20} />
@@ -235,7 +235,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                         <button 
                             onClick={() => setIsGroupModalOpen(true)}
-                            className="p-2 bg-gray-100/50 text-gray-600 rounded-full hover:bg-gray-100 transition-all active:scale-95"
+                            className="p-2 bg-gray-100/50 dark:bg-[#3a3b3c] text-gray-600 dark:text-[#b0b3b8] rounded-full hover:bg-gray-100 dark:hover:bg-[#4b4c4f] transition-all active:scale-95"
                             title="Tạo nhóm mới"
                         >
                             <Users size={20} />
@@ -247,25 +247,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     e.stopPropagation();
                                     onNavigateToAdmin?.();
                                 }}
-                                className="p-2 bg-gray-100/50 text-gray-600 rounded-full hover:bg-gray-100 transition-all active:scale-95 group relative"
+                                className="p-2 bg-gray-100/50 dark:bg-[#3a3b3c] text-gray-600 dark:text-[#b0b3b8] rounded-full hover:bg-gray-100 dark:hover:bg-[#4b4c4f] transition-all active:scale-95 group relative"
                                 title="Quản trị"
                             >
                                 <LayoutDashboard size={20} />
-                                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+                                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-[#242526]"></span>
                             </button>
                         )}
                     </div>
                 </div>
 
-                {/* Search Bar - Modern Floating Style */}
+                {/* Search Bar - Zalo-like Style */}
                 <div className="relative group px-4 mb-3">
-                    <div className="absolute left-7 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-blue-500">
+                    <div className="absolute left-7 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-[#0068ff]">
                         <Search size={16} />
                     </div>
                     {isSearching && (
                         <button 
                             onClick={() => {setSearchQuery(''); setIsSearching(false);}}
-                            className="absolute right-7 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            className="absolute right-7 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-white"
                         >
                             <X size={16} />
                         </button>
@@ -275,11 +275,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         placeholder="Tìm kiếm trên LinkUp"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-[#f0f2f5] dark:bg-slate-800 dark:text-white border-none rounded-full py-2.5 pl-10 pr-4 text-[14px] focus:ring-0 placeholder:text-gray-500 font-medium transition-all"
+                        className="w-full bg-[#f0f2f5] dark:bg-[#3a3b3c] dark:text-white border-none rounded-full py-2.5 pl-10 pr-4 text-[14px] focus:ring-0 placeholder:text-gray-500 font-medium transition-all"
                     />
                 </div>
 
-                {/* Filter Tabs - Zalo/Messenger Hybrid Style */}
+                {/* Filter Tabs - Zalo Style */}
                 {!isSearching && (
                     <div className="flex items-center space-x-1 px-4 mb-2 overflow-x-auto no-scrollbar">
                         {[
@@ -294,8 +294,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 className={clsx(
                                     "flex-shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-bold transition-all border",
                                     activeTab === tab.id 
-                                        ? "bg-blue-50 text-blue-600 border-blue-100" 
-                                        : "bg-white text-gray-500 border-transparent hover:bg-gray-50"
+                                        ? "bg-blue-50 dark:bg-[#1c2c4c] text-[#0068ff] dark:text-[#4599ff] border-blue-100 dark:border-[#263c66]" 
+                                        : "bg-white dark:bg-transparent text-gray-500 dark:text-[#b0b3b8] border-transparent hover:bg-gray-50 dark:hover:bg-[#3a3b3c]"
                                 )}
                             >
                                 {tab.label}

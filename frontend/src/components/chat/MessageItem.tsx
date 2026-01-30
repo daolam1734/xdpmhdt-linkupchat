@@ -266,13 +266,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 'px-3 py-1.5 text-[15px] leading-snug font-normal relative transition-all',
                 bubbleRadius,
                 isMe
-                    ? 'bg-blue-600 text-white shadow-sm'
+                    ? 'bg-[#0068ff] text-white shadow-sm'
                     : message.isBot 
-                        ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-2 border-blue-100 dark:border-blue-900 shadow-xl shadow-blue-500/10 ring-1 ring-blue-500/5'
-                        : 'bg-[#F0F2F5] dark:bg-slate-800 text-black dark:text-white',
-                message.is_recalled && 'bg-gray-100 dark:bg-slate-700 text-gray-400 italic border border-gray-200 dark:border-slate-600',
-                // Viền màu xanh đặc trưng cho tin nhắn chỉ chứa ảnh hoặc tệp
-                message.file_url && !message.content && !message.is_recalled && 'bg-white dark:bg-slate-800 border-2 border-blue-500 p-[2px] shadow-lg ring-1 ring-blue-500/10'
+                        ? 'bg-white dark:bg-[#242526] text-slate-800 dark:text-slate-100 border-2 border-blue-100 dark:border-[#3e4042] shadow-xl shadow-blue-500/10 dark:shadow-none'
+                        : 'bg-[#F0F2F5] dark:bg-[#3e4042] text-black dark:text-white',
+                message.is_recalled && 'bg-gray-100 dark:bg-[#3a3b3c] text-gray-400 dark:text-[#b0b3b8] italic border border-gray-200 dark:border-[#4b4c4f]',
+                // Viền màu xanh đặc trưng cho tin nhắn chỉ chứa ảnh hoặc tệp (kiểu Zalo)
+                message.file_url && !message.content && !message.is_recalled && 'bg-white dark:bg-[#242526] border-2 border-[#0068ff] p-[2px] shadow-lg'
                 )}
             >
                 {message.is_forwarded && (

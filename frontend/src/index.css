@@ -28,68 +28,84 @@ body {
   transition: all 0.3s ease;
 }
 
-/* Base Dark Mode Support */
+/* Zalo-style Dark Mode Palette Overrides */
 body.dark {
-  background-color: #0f172a;
-  color: #f8fafc;
+  background-color: #1a1a1a;
+  color: #ffffff;
 }
 
-/* Global Dark Mode Overrides for UI Elements */
 body.dark .bg-white,
 body.dark .bg-gray-50,
 body.dark .bg-slate-50 {
-  background-color: #1e293b !important;
+  background-color: #242526 !important;
 }
 
 body.dark .text-black,
 body.dark .text-gray-900,
 body.dark .text-slate-900,
 body.dark .text-gray-800 {
-  color: #f8fafc !important;
+  color: #ffffff !important;
 }
 
 body.dark .text-gray-500,
 body.dark .text-slate-500,
 body.dark .text-gray-400 {
-  color: #94a3b8 !important;
+  color: #b0b3b8 !important;
 }
 
 body.dark .border-gray-100,
 body.dark .border-gray-200,
 body.dark .border-slate-100,
 body.dark .border-gray-50 {
-  border-color: #334155 !important;
+  border-color: #3e4042 !important;
 }
 
 body.dark header,
 body.dark footer,
 body.dark aside {
-  background-color: #0f172a !important;
-  border-color: #1e293b !important;
+  background-color: #242526 !important;
+  border-color: #3e4042 !important;
 }
 
 body.dark input,
 body.dark textarea {
-  background-color: #334155 !important;
-  color: white !important;
-  border-color: #475569 !important;
+  background-color: #3a3b3c !important;
+  color: #ffffff !important;
+  border-color: #4b4c4f !important;
 }
 
 body.dark .bg-[#F9FAFB]/50,
 body.dark .bg-[#f0f2f5] {
-  background-color: #0f172a !important;
+  background-color: #1a1a1a !important;
 }
 
 body.dark .hover\:bg-gray-50:hover,
-body.dark .hover\:bg-gray-100:hover {
-  background-color: #334155 !important;
+body.dark .hover\:bg-gray-100:hover,
+body.dark .hover\:bg-blue-50:hover {
+  background-color: #3a3b3c !important;
+}
+
+body.dark .bg-blue-50 {
+  background-color: #1c2c4c !important;
+  color: #4599ff !important;
 }
 
 body.dark .shadow-sm,
 body.dark .shadow-md,
 body.dark .shadow-lg {
-  shadow: none !important;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Custom Scrollbar for Dark Mode */
+body.dark ::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+body.dark ::-webkit-scrollbar-thumb {
+  background: #3e4042;
+  border: 4px solid #1a1a1a;
+}
+body.dark ::-webkit-scrollbar-thumb:hover {
+  background: #4b4c4f;
 }
 
 #root {

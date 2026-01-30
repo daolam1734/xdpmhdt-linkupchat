@@ -58,10 +58,10 @@ export const AppSettingsTab: React.FC<AppSettingsTabProps> = ({
                         }}
                         className={clsx(
                             "flex flex-col items-center p-6 rounded-[24px] transition-all group",
-                            theme === 'light' ? "bg-white border-2 border-blue-600 shadow-xl shadow-blue-50 dark:bg-slate-800 dark:shadow-none" : "bg-gray-50 border-2 border-transparent opacity-60 hover:opacity-100 dark:bg-slate-900"
+                            theme === 'light' ? "bg-white border-2 border-[#0068ff] shadow-xl shadow-blue-50 dark:bg-[#3a3b3c] dark:shadow-none" : "bg-gray-50 border-2 border-transparent opacity-60 hover:opacity-100 dark:bg-[#242526]"
                         )}
                     >
-                        <Sun size={32} strokeWidth={2.5} className={theme === 'light' ? "text-blue-600 mb-3" : "text-gray-400 mb-3 group-hover:text-amber-500 transition-colors"} />
+                        <Sun size={32} strokeWidth={2.5} className={theme === 'light' ? "text-[#0068ff] mb-3" : "text-gray-400 mb-3 group-hover:text-amber-500 transition-colors"} />
                         <span className={clsx("text-[14px] font-bold", theme === 'light' ? "text-blue-900 dark:text-blue-400" : "text-gray-500")}>Giao diện Sáng</span>
                     </button>
                     <button 
@@ -72,11 +72,11 @@ export const AppSettingsTab: React.FC<AppSettingsTabProps> = ({
                         }}
                         className={clsx(
                             "flex flex-col items-center p-6 rounded-[24px] transition-all group",
-                            theme === 'dark' ? "bg-white border-2 border-blue-600 shadow-xl shadow-blue-50 dark:bg-slate-800 dark:shadow-none" : "bg-gray-50 border-2 border-transparent opacity-60 hover:opacity-100 dark:bg-slate-900"
+                            theme === 'dark' ? "bg-white border-2 border-[#0068ff] shadow-xl shadow-blue-50 dark:bg-[#3a3b3c] dark:shadow-none" : "bg-gray-50 border-2 border-transparent opacity-60 hover:opacity-100 dark:bg-[#242526]"
                         )}
                     >
-                        <Moon size={32} strokeWidth={2.5} className={theme === 'dark' ? "text-blue-600 mb-3" : "text-gray-400 mb-3 group-hover:text-indigo-600 transition-colors"} />
-                        <span className={clsx("text-[14px] font-bold", theme === 'dark' ? "text-blue-900 dark:text-blue-400" : "text-gray-500")}>Giao diện Tối</span>
+                        <Moon size={32} strokeWidth={2.5} className={theme === 'dark' ? "text-[#0068ff] mb-3" : "text-gray-400 mb-3 group-hover:text-indigo-600 transition-colors"} />
+                        <span className={clsx("text-[14px] font-bold", theme === 'dark' ? "text-blue-900 dark:text-white" : "text-gray-500")}>Giao diện Tối</span>
                     </button>
                 </div>
             </section>
