@@ -20,7 +20,8 @@ export const MessageNotification: React.FC<MessageNotificationProps> = ({
         <div
             className={`${
                 t.visible ? 'animate-enter' : 'animate-leave'
-            } max-w-sm w-full bg-white dark:bg-[#242526] shadow-2xl rounded-xl pointer-events-auto flex ring-1 ring-black ring-opacity-5 border dark:border-[#3a3b3c] cursor-pointer hover:bg-gray-50 dark:hover:bg-[#2a2b2e] transition-all transform hover:scale-[1.02]`}
+            } max-w-sm w-full bg-white dark:bg-[#242526] shadow-2xl rounded-xl pointer-events-auto flex ring-1 ring-black ring-opacity-10 border dark:border-[#3a3b3c] cursor-pointer hover:bg-gray-50 dark:hover:bg-[#2a2b2e] transition-all transform hover:scale-[1.02] z-[9999]`}
+            style={{ minHeight: '80px' }}
             onClick={() => {
                 onClick();
                 toast.dismiss(t.id);

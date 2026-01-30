@@ -18,6 +18,7 @@ function App() {
 
   useEffect(() => {
     initialize();
+    // toast.success("Hệ thống thông báo đã sẵn sàng"); // Bật khi cần debug
   }, [initialize]);
 
   useEffect(() => {

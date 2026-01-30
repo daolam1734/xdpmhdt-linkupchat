@@ -324,10 +324,13 @@ export const useChatStore = create<ChatState>()(
                         case 'message':
                             const currentUserId = useAuthStore.getState().currentUser?.id;
                             
-                            // LinkUp: Isolation logic for help room to ensure admin side looks like user side
+                            // LinkUp: Isolation logic for help room
                             if (data.room_id === 'help') {
+                                const isAdmin = useAuthStore.getState().currentUser?.role === 'admin' || 
+                                               useAuthStore.getState().currentUser?.is_superuser;
                                 const isPersonal = (data.sender_id === currentUserId && !data.receiver_id) || 
-                                                 (data.receiver_id === currentUserId);
+                                                 (data.receiver_id === currentUserId) ||
+                                                 (isAdmin); // Admins see all help messages
                                 if (!isPersonal) return;
                             }
 
@@ -365,6 +368,9 @@ export const useChatStore = create<ChatState>()(
 
                             if (!isMe && !isActiveRoom && currentUser?.app_settings?.notifications !== false) {
                                 console.log("✨ Đang hiển thị toast...");
+                                // Thử nghiệm cả 2 loại toast
+                                toast.success(`Tin nhắn mới từ ${msgData.senderName}: ${msgData.content.substring(0, 20)}...`);
+                                
                                 toast.custom((t) => (
                                     <MessageNotification
                                         t={t}
