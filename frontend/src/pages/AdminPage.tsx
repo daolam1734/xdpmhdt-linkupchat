@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useChatStore } from '../store/useChatStore';
 import { useViewStore } from '../store/useViewStore';
@@ -14,7 +14,7 @@ import toast from 'react-hot-toast';
 import { ConfirmModal } from '../components/common/ConfirmModal';
 
 // Sub-components
-import type { Stats, User, SystemConfig, SupportConversation, SupportMessage, Room } from './admin/types';
+import type { Stats, User, SystemConfig, SupportConversation, SupportMessage, Room, Report } from './admin/types';
 import { OverviewTab } from './admin/OverviewTab';
 import { UsersTab } from './admin/UsersTab';
 import { RoomsTab } from './admin/RoomsTab';
@@ -38,6 +38,8 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [saving, setSaving] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [displaySearchTerm, setDisplaySearchTerm] = useState('');
+    const [supportSearchTerm, setSupportSearchTerm] = useState('');
+    const [displaySupportSearchTerm, setDisplaySupportSearchTerm] = useState('');
     const [processingIds, setProcessingIds] = useState<string[]>([]);
     const [filter, setFilter] = useState<'all' | 'active' | 'banned' | 'admin' | 'user'>('all');
     const { adminTab: activeTab, setAdminTab: setActiveTab } = useViewStore();
@@ -63,6 +65,22 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         }, 300);
         return () => clearTimeout(timer);
     }, [displaySearchTerm]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setSupportSearchTerm(displaySupportSearchTerm);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [displaySupportSearchTerm]);
+
+    const filteredSupportConversations = useMemo(() => {
+        if (!supportSearchTerm) return supportConversations;
+        const search = supportSearchTerm.toLowerCase();
+        return supportConversations.filter(conv => 
+            conv.full_name.toLowerCase().includes(search) ||
+            conv.display_name?.toLowerCase().includes(search)
+        );
+    }, [supportConversations, supportSearchTerm]);
 
     useEffect(() => {
         if (activeTab !== 'support' || !socket) return;
@@ -515,7 +533,9 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             case 'support':
                 return (
                     <SupportTab 
-                        conversations={supportConversations}
+                        conversations={filteredSupportConversations}
+                        searchTerm={displaySupportSearchTerm}
+                        onSearchChange={setDisplaySupportSearchTerm}
                         selectedUser={selectedUser}
                         messages={supportMessages}
                         replyContent={replyContent}
@@ -555,19 +575,19 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
                             <ShieldAlert size={20} className="text-white" />
                         </div>
-                        <h1 className="text-xl font-bold tracking-tight">LinkUp Admin</h1>
+                        <h1 className="text-xl font-bold tracking-tight">LinkUp Quản trị</h1>
                     </div>
                 </div>
 
                 <nav className="flex-1 p-4 space-y-2 mt-4">
                     {[
-                        { id: 'overview', icon: Layout, label: 'Dashboard' },
-                        { id: 'users', icon: Users, label: 'Users' },
-                        { id: 'rooms', icon: MessageSquare, label: 'Conversations' },
-                        { id: 'reports', icon: TrendingUp, label: 'Reports' },
-                        { id: 'ai_assistant', icon: Zap, label: 'AI Assistant' },
-                        { id: 'support', icon: Headset, label: 'Help & Support' },
-                        { id: 'settings', icon: Settings, label: 'Settings' }
+                        { id: 'overview', icon: Layout, label: 'Bảng điều khiển' },
+                        { id: 'users', icon: Users, label: 'Người dùng' },
+                        { id: 'rooms', icon: MessageSquare, label: 'Hội thoại' },
+                        { id: 'reports', icon: TrendingUp, label: 'Báo cáo vi phạm' },
+                        { id: 'ai_assistant', icon: Zap, label: 'Trợ lý AI' },
+                        { id: 'support', icon: Headset, label: 'Hỗ trợ trực tuyến' },
+                        { id: 'settings', icon: Settings, label: 'Cài đặt hệ thống' }
                     ].map((tab) => (
                         <button 
                             key={tab.id}
@@ -595,12 +615,12 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <main className="flex-1 overflow-y-auto">
                 <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between sticky top-0 z-10">
                     <h2 className="text-[18px] font-bold text-slate-900">
-                        {activeTab === 'overview' ? 'System Dashboard' : 
-                         activeTab === 'users' ? 'User Management' : 
-                         activeTab === 'rooms' ? 'Conversations Management' :
-                         activeTab === 'reports' ? 'Reports & Statistics' :
-                         activeTab === 'ai_assistant' ? 'AI Assistant configuration' :
-                         activeTab === 'settings' ? 'System configuration' : 'Help & Support'}
+                        {activeTab === 'overview' ? 'Bảng điều khiển hệ thống' : 
+                         activeTab === 'users' ? 'Quản lý người dùng' : 
+                         activeTab === 'rooms' ? 'Quản lý hội thoại' :
+                         activeTab === 'reports' ? 'Báo cáo & Thống kê' :
+                         activeTab === 'ai_assistant' ? 'Cấu hình Trợ lý AI' :
+                         activeTab === 'settings' ? 'Cấu hình hệ thống' : 'Hỗ trợ khách hàng'}
                     </h2>
                     <div className="flex items-center space-x-4">
                         <div className="text-right">

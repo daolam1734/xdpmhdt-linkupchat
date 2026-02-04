@@ -11,7 +11,7 @@ import { Toaster } from 'react-hot-toast'
 
 function App() {
   const { token, currentUser, isLoading: authLoading, initialize } = useAuthStore();
-  const { fetchRooms, connect, disconnect, isHydrated: chatHydrated } = useChatStore();
+  const { fetchRooms, connect, isHydrated: chatHydrated } = useChatStore();
   const { currentView, setView, isHydrated: viewHydrated } = useViewStore();
 
   const isFullyHydrated = chatHydrated && viewHydrated;

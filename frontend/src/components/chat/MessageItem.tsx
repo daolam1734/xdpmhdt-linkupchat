@@ -233,12 +233,14 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 }}
             >
                 <span className="text-[11px] text-gray-500 dark:text-gray-400 font-bold group-hover/name:text-blue-500 transition-colors">
-                    {message.isBot ? "LinkUp AI" : message.senderName}
+                    {message.senderName}
                 </span>
                 {message.isBot && (
                     <div className="flex items-center space-x-1 px-2 py-0.5 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full shadow-md ml-1">
                         <Sparkles size={8} className="text-white fill-white" />
-                        <span className="text-[9px] text-white font-black uppercase tracking-wider">Assistant</span>
+                        <span className="text-[9px] text-white font-black uppercase tracking-wider">
+                            {message.senderName === 'LinkUp Support' ? 'Hệ thống' : 'Trợ lý AI'}
+                        </span>
                     </div>
                 )}
             </div>

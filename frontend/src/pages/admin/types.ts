@@ -3,6 +3,11 @@ export interface Stats {
     total_admins: number;
     total_messages: number;
     total_rooms: number;
+    community_rooms?: number;
+    group_rooms?: number;
+    direct_rooms?: number;
+    bot_rooms?: number;
+    support_rooms?: number;
     new_messages_24h: number;
     online_users: number;
     new_users_24h: number;
@@ -92,9 +97,17 @@ export interface Room {
     is_private: boolean;
     created_at: string;
     created_by: string;
+    owner_name?: string;
     message_count: number;
     member_count: number;
-    is_locked?: boolean;
+    report_count: number;
+    members?: Array<{
+        id: string;
+        full_name?: string;
+        username: string;
+        avatar_url?: string;
+    }>;
+    is_locked: boolean;
 }
 
 export interface Report {
@@ -169,6 +182,8 @@ export interface SupportTabProps {
     selectedUser: SupportConversation | null;
     messages: SupportMessage[];
     replyContent: string;
+    searchTerm: string;
+    onSearchChange: (value: string) => void;
     sendingReply: boolean;
     onSelectUser: (user: SupportConversation) => void;
     onReplyChange: (content: string) => void;

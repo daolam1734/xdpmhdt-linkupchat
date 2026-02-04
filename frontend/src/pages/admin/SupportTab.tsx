@@ -11,6 +11,7 @@ import { formatRelativeTime } from '../../utils/time';
 export const SupportTab: React.FC<SupportTabProps> = ({
     conversations, selectedUser, onSelectUser,
     messages, replyContent, onReplyChange, onSendReply, sendingReply,
+    searchTerm, onSearchChange,
     onStatusChange, onNoteChange, onUpdateMessage, onDeleteMessage
 }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -62,6 +63,8 @@ export const SupportTab: React.FC<SupportTabProps> = ({
                         <input 
                             type="text" 
                             placeholder="Tìm người dùng..." 
+                            value={searchTerm}
+                            onChange={(e) => onSearchChange(e.target.value)}
                             className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
                         />
                     </div>

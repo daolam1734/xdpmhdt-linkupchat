@@ -3,11 +3,17 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Install dependencies
+# Khai báo các biến môi trường cho Vite trong quá trình build
+ARG VITE_API_URL
+ARG VITE_WS_URL
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_WS_URL=$VITE_WS_URL
+
+# Cài đặt dependencies
 COPY package*.json ./
 RUN npm ci
 
-# Copy source and build
+# Copy mã nguồn và build
 COPY . .
 RUN npm run build
 

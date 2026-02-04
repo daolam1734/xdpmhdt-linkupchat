@@ -18,6 +18,7 @@ export interface FriendRequest {
     request_id: string;
     user_id: string;
     username: string;
+    full_name?: string;
     avatar_url?: string;
     created_at: string;
 }

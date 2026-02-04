@@ -16,7 +16,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
   const [pendingFile, setPendingFile] = useState<{ url: string, type: 'image' | 'file', filename: string } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimeoutRef = useRef<any>(null);
   
   const { 
     replyingTo, 

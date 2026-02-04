@@ -69,6 +69,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
     setViewingUser,
     typingUsers,
     roomMembers,
+    removeMember,
     updateRoomInfo,
     addRoomMembers,
     changeMemberRole,
@@ -342,8 +343,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
         return m.content && m.content.match(linkRegex);
     });
 
-    const isSpecialRoom = activeRoom.id === 'ai' || activeRoom.id === 'help';
-    const isGroup = activeRoom.type === 'group' || activeRoom.type === 'public' || activeRoom.type === 'private';
+    const isSpecialRoom = activeRoom.type === 'bot' || activeRoom.type === 'support';
+    const isGroup = activeRoom.type === 'community' || activeRoom.type === 'group';
 
     return (
       <aside className={clsx(
@@ -352,8 +353,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
       )}>
         <div className="h-[64px] px-4 border-b border-gray-50 flex items-center justify-between shrink-0">
             <h3 className="font-bold text-gray-900">
-                {activeRoom.id === 'help' ? 'Hỗ trợ & CSKH' : 
-                 activeRoom.id === 'ai' ? 'Trợ lý AI' : 
+                {activeRoom.type === 'support' ? 'Hỗ trợ & CSKH' : 
+                 activeRoom.type === 'bot' ? 'Trợ lý AI' : 
                  isGroup ? 'Thông tin nhóm' : 'Thông tin cá nhân'}
             </h3>
             <button 
@@ -371,7 +372,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                     <Avatar 
                         name={activeRoom.name} 
                         url={activeRoom.avatar_url}
-                        isOnline={activeRoom.type === 'ai' ? true : (activeRoom.is_online && !activeRoom.blocked_by_other)} 
+                        isBot={activeRoom.type === 'bot'}
+                        isOnline={activeRoom.type === 'bot' ? true : (activeRoom.is_online && !activeRoom.blocked_by_other)} 
                         size="xl" 
                     />
                     {isGroup && isAdminOfRoom && (
@@ -389,36 +391,55 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                         accept="image/*"
                         onChange={handleUpdateAvatar}
                     />
-                    {activeRoom.type === 'ai' && (
+                    {activeRoom.type === 'bot' && (
                         <div className="absolute -bottom-1 -right-1 p-1 bg-purple-600 text-white rounded-full border-2 border-white">
                             <Bot size={14} />
                         </div>
                     )}
                 </div>
-                <div className="flex items-center space-x-2">
-                    <h2 className="text-[18px] font-black text-gray-900 text-center leading-tight">
-                        {activeRoom.name}
-                    </h2>
-                    {isGroup && isAdminOfRoom && (
-                        <button 
-                            onClick={handleRenameRoom}
-                            className="p-1 text-gray-400 hover:text-blue-500 transition-colors"
-                            title="Đổi tên nhóm"
-                        >
-                            <Edit2 size={14} />
-                        </button>
-                    )}
-                </div>
+                    <div className="flex flex-col items-center">
+                        <div className="flex items-center space-x-2">
+                            <h2 className="text-[18px] font-black text-gray-900 dark:text-white text-center leading-tight">
+                                {activeRoom.name}
+                            </h2>
+                            {isGroup && isAdminOfRoom && (
+                                <button 
+                                    onClick={handleRenameRoom}
+                                    className="p-1 text-gray-400 hover:text-blue-500 transition-colors"
+                                    title="Đổi tên nhóm"
+                                >
+                                    <Edit2 size={14} />
+                                </button>
+                            )}
+                        </div>
+                        {/* Type Tag */}
+                        <div className="mt-1">
+                            {activeRoom.type === 'community' && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-full uppercase tracking-wider">Phòng cộng đồng</span>
+                            )}
+                            {activeRoom.type === 'group' && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-full uppercase tracking-wider">Nhóm trò chuyện</span>
+                            )}
+                            {activeRoom.type === 'direct' && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-full uppercase tracking-wider">Hội thoại cá nhân</span>
+                            )}
+                            {activeRoom.type === 'bot' && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 rounded-full uppercase tracking-wider">Trợ lý AI LinkUp</span>
+                            )}
+                            {activeRoom.type === 'support' && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-full uppercase tracking-wider">Hỗ trợ hệ thống</span>
+                            )}
+                        </div>
+                    </div>
                 <div className="flex items-center mt-2 space-x-1">
                     <span className={clsx(
                         "w-2 h-2 rounded-full",
-                        (activeRoom.is_online || activeRoom.type === 'ai' || activeRoom.id === 'help') ? "bg-green-500" : "bg-gray-300"
+                        (activeRoom.is_online || activeRoom.type === 'bot' || activeRoom.type === 'support') ? "bg-green-500" : "bg-gray-300"
                     )} />
                     <span className="text-[12px] text-gray-500 font-medium">
-                        {activeRoom.id === 'help' ? 'Phòng hỗ trợ LinkUp' :
-                        activeRoom.type === 'ai' ? 'LinkUp AI Assistant' : 
-                        activeRoom.type === 'direct' ? (activeRoom.is_online ? 'Đang hoạt động' : 'Ngoại tuyến') : 
-                        `${roomMembers.length} thành viên`}
+                        {activeRoom.type === 'support' ? 'Phòng hỗ trợ LinkUp' :
+                         activeRoom.type === 'bot' ? 'LinkUp AI Assistant' : 
+                         (activeRoom.is_online && !activeRoom.blocked_by_other) ? 'Đang hoạt động' : 'Ngoại tuyến'}
                     </span>
                 </div>
 
@@ -443,7 +464,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                             </div>
                             <span className="text-[11px] font-bold text-gray-500 uppercase tracking-tighter">Cá nhân</span>
                         </button>
-                    ) : (activeRoom.type === 'group' || activeRoom.type === 'private') && !isSpecialRoom && (
+                    ) : (activeRoom.type === 'public' || activeRoom.type === 'private') && !isSpecialRoom && (
                         <button 
                             onClick={() => setIsAddMemberModalOpen(true)}
                             className="flex flex-col items-center space-y-1.5 group"
@@ -472,7 +493,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
 
             <div className="p-2 space-y-1">
                 {/* AI / Help specialized info */}
-                {activeRoom.id === 'ai' && (
+                {activeRoom.type === 'bot' && (
                     <div className="p-4 bg-purple-50/50 rounded-2xl border border-purple-100 mb-2">
                         <div className="flex items-center space-x-2 text-purple-700 mb-2">
                             <Info size={16} />
@@ -484,7 +505,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                     </div>
                 )}
 
-                {activeRoom.id === 'help' && (
+                {activeRoom.type === 'support' && (
                     <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100 mb-2">
                         <div className="flex items-center space-x-2 text-blue-700 mb-2">
                             <ShieldAlert size={16} />
@@ -868,7 +889,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
 
                 {/* Danger Zone */}
                 <div className="px-2 pb-8 space-y-1">
-                    {activeRoom.id === 'ai' ? (
+                    {activeRoom.type === 'bot' ? (
                         <button 
                             onClick={() => setShowClearConfirm(true)}
                             className="w-full flex items-center space-x-3 p-3 text-red-500 hover:bg-red-50 rounded-xl transition-colors font-bold text-[14px] group"
@@ -878,7 +899,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                             </div>
                             <span>Làm mới hội thoại AI</span>
                         </button>
-                    ) : activeRoom.id === 'help' ? (
+                    ) : activeRoom.type === 'support' ? (
                         <button 
                             className="w-full flex items-center space-x-3 p-3 text-gray-500 hover:bg-gray-50 rounded-xl transition-colors font-bold text-[14px] group"
                         >
@@ -968,15 +989,33 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                     <Avatar 
                         name={activeRoom.name} 
                         url={activeRoom.avatar_url}
-                        isOnline={activeRoom.type === 'ai' ? true : (activeRoom.is_online && !activeRoom.blocked_by_other && !(activeRoom.other_user_id && currentUser?.blocked_users?.includes(activeRoom.other_user_id)))} 
+                        isBot={activeRoom.type === 'bot'}
+                        isOnline={activeRoom.type === 'bot' ? true : (activeRoom.is_online && !activeRoom.blocked_by_other && !(activeRoom.other_user_id && currentUser?.blocked_users?.includes(activeRoom.other_user_id)))} 
                         size="md" 
                     />
                     <div>
-                      <h1 className="text-[16px] font-bold text-black dark:text-white leading-tight">
-                        {activeRoom.name}
-                      </h1>
                       <div className="flex items-center">
-                        {activeRoom.id === 'help' ? (
+                        <h1 className="text-[16px] font-bold text-black dark:text-white leading-tight">
+                          {activeRoom.name}
+                        </h1>
+                        {activeRoom.type === 'community' && (
+                          <span className="ml-2 px-1.5 py-0.5 text-[9px] font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded uppercase tracking-wider">Cộng đồng</span>
+                        )}
+                        {activeRoom.type === 'group' && (
+                          <span className="ml-2 px-1.5 py-0.5 text-[9px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded uppercase tracking-wider">Nhóm kín</span>
+                        )}
+                        {activeRoom.type === 'direct' && (
+                          <span className="ml-2 px-1.5 py-0.5 text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded uppercase tracking-wider">Cá nhân</span>
+                        )}
+                        {activeRoom.type === 'bot' && (
+                          <span className="ml-2 px-1.5 py-0.5 text-[9px] font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 rounded uppercase tracking-wider">Trợ lý AI</span>
+                        )}
+                        {activeRoom.type === 'support' && (
+                          <span className="ml-2 px-1.5 py-0.5 text-[9px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded uppercase tracking-wider">Hệ thống</span>
+                        )}
+                      </div>
+                      <div className="flex items-center">
+                        {activeRoom.type === 'support' ? (
                           <div className="flex items-center space-x-1.5 mt-0.5">
                             {activeRoom.support_status === 'waiting' ? (
                                 <>
@@ -999,7 +1038,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                           <p className="text-[12px] text-gray-500 font-normal mt-0.5">
                             {activeRoom.blocked_by_other 
                               ? '' 
-                              : (activeRoom.type === 'ai' || (activeRoom.is_online && !activeRoom.blocked_by_other && !(activeRoom.other_user_id && currentUser?.blocked_users?.includes(activeRoom.other_user_id)))) ? 'Đang hoạt động' : ''}
+                              : (activeRoom.type === 'bot' || (activeRoom.is_online && !activeRoom.blocked_by_other && !(activeRoom.other_user_id && currentUser?.blocked_users?.includes(activeRoom.other_user_id)))) ? 'Đang hoạt động' : ''}
                           </p>
                         )}
                       </div>
@@ -1091,10 +1130,21 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onNavigateToAdmin }) => {
                             <div className="w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
                           </div>
                         </div>
-                        <h3 className="text-xl font-bold text-black">{activeRoom.name}</h3>
+                        <div className="flex items-center space-x-2">
+                           <h3 className="text-xl font-bold text-black dark:text-white">{activeRoom.name}</h3>
+                           {activeRoom.type === 'community' && (
+                             <span className="px-1.5 py-0.5 text-[10px] font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded uppercase tracking-wider">Cộng đồng</span>
+                           )}
+                           {activeRoom.type === 'group' && (
+                             <span className="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded uppercase tracking-wider">Nhóm kín</span>
+                           )}
+                           {activeRoom.type === 'bot' && (
+                             <span className="px-1.5 py-0.5 text-[10px] font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 rounded uppercase tracking-wider">Trợ lý AI</span>
+                           )}
+                        </div>
                         <div className="max-w-xs mt-3">
                           <p className="text-gray-500 text-[14px] px-2 leading-relaxed">
-                            {activeRoom.id === 'ai' 
+                            {activeRoom.type === 'bot' 
                               ? "Chào bạn! Tôi là LinkUp AI. Hôm nay tôi có thể giúp gì cho bạn không?"
                               : activeRoom.type === 'direct' 
                               ? `Hãy gửi một lời chào để bắt đầu kết nối với ${activeRoom.name}!`

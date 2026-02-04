@@ -306,7 +306,15 @@ export const useChatStore = create<ChatState>()(
         connect: (token: string) => {
             if (get().isConnected) return;
 
-            const socket = new WebSocket(`ws://localhost:8000/api/v1/ws/${token}`);
+            // Tự động xác định WS URL nếu không có cấu hình
+            let wsBase = import.meta.env.VITE_WS_URL;
+            if (!wsBase) {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const host = window.location.host; // Bao gồm cả port nếu có
+                wsBase = `${protocol}//${host}/ws`;
+            }
+            
+            const socket = new WebSocket(`${wsBase}/${token}`);
 
             socket.onopen = () => {
                 set({ isConnected: true, socket });
@@ -354,7 +362,6 @@ export const useChatStore = create<ChatState>()(
                                 reply_to_content: data.reply_to_content
                             };
 
-                            console.log("📩 Mới nhận tin nhắn:", msgData.content, "từ", msgData.senderName);
                             get().addMessage(msgData);
                         
                             // Hiển thị thông báo nổi nếu:
@@ -364,13 +371,8 @@ export const useChatStore = create<ChatState>()(
                             const isMe = String(data.sender_id) === String(currentUserId);
                             const isActiveRoom = String(get().activeRoom?.id) === String(data.room_id);
 
-                            console.log("🔔 KT Thông báo:", { isMe, isActiveRoom, notiSetting: currentUser?.app_settings?.notifications });
-
                             if (!isMe && !isActiveRoom && currentUser?.app_settings?.notifications !== false) {
-                                console.log("✨ Đang hiển thị toast...");
-                                // Thử nghiệm cả 2 loại toast
-                                toast.success(`Tin nhắn mới từ ${msgData.senderName}: ${msgData.content.substring(0, 20)}...`);
-                                
+                                // Hiển thị thông báo duy nhất bằng giao diện tùy chỉnh
                                 toast.custom((t) => (
                                     <MessageNotification
                                         t={t}
@@ -386,6 +388,7 @@ export const useChatStore = create<ChatState>()(
                                         }}
                                     />
                                 ), { 
+                                    id: `msg-${msgData.id}`, // Sử dụng ID tin nhắn để tránh lặp lại cùng 1 thông báo
                                     duration: 5000,
                                     position: 'bottom-right' 
                                 });

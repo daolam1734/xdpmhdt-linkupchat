@@ -43,6 +43,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
     const [recentFriends, setRecentFriends] = useState<UserSearchItem[]>([]);
     const [deleteConfirmRoomId, setDeleteConfirmRoomId] = useState<string | null>(null);
+    const [deleteHistoryRoomId, setDeleteHistoryRoomId] = useState<string | null>(null);
+    const [showContactSearch, setShowContactSearch] = useState(false);
     const [isDeletingChat, setIsDeletingChat] = useState(false);
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<'all' | 'unread' | 'personal' | 'group'>('all');
@@ -63,8 +65,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     const filteredRooms = rooms.filter(room => {
         if (activeTab === 'unread') return room.has_unread;
-        if (activeTab === 'personal') return room.type === 'direct' || room.id === 'ai' || room.id === 'help';
-        if (activeTab === 'group') return room.type === 'public' || room.type === 'private';
+        if (activeTab === 'personal') return room.type === 'direct' || room.type === 'bot' || room.type === 'support';
+        if (activeTab === 'group') return room.type === 'community' || room.type === 'group';
         return true;
     });
 
@@ -458,21 +460,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         )}
 
                         {/* Special AI & Support - Highlighted UI */}
-                        {filteredRooms.some(r => r.id === 'ai' || r.id === 'help') && (
+                        {filteredRooms.some(r => r.type === 'bot' || r.type === 'support') && (
                              <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.1em] px-4 mb-2 mt-2">Dịch vụ & Trợ giúp</h3>
                         )}
                         <div className="px-1 mb-4 select-none">
-                            {filteredRooms.filter(r => r.id === 'ai' || r.id === 'help').map((room) => (
+                            {filteredRooms.filter(r => r.type === 'bot' || r.type === 'support').map((room) => (
                                 <div
                                     key={room.id}
                                     className={clsx(
                                         "w-full flex items-center px-3 py-3 rounded-2xl transition-all cursor-pointer group mb-1.5 border border-transparent relative overflow-hidden",
                                         activeRoomId === room.id 
-                                            ? (room.id === 'ai' ? "bg-purple-50 border-purple-100 shadow-sm" : "bg-blue-50 border-blue-100 shadow-sm") 
+                                            ? (room.type === 'bot' ? "bg-purple-50 border-purple-100 shadow-sm" : "bg-blue-50 border-blue-100 shadow-sm") 
                                             : "hover:bg-gray-50 active:scale-[0.98]"
                                     )}
                                     onClick={() => {
-                                        onSelectRoom(room);
+                                        onSelectRoom?.(room);
                                         setViewingUser(null);
                                     }}
                                 >
@@ -481,9 +483,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             name={room.name} 
                                             url={room.avatar_url} 
                                             size="lg" 
-                                            isBot={true}
+                                            isBot={room.type === 'bot'}
                                             isOnline={true}
-                                            className={room.id === 'ai' ? "ring-2 ring-purple-100" : "ring-2 ring-blue-100"}
+                                            className={room.type === 'bot' ? "ring-2 ring-purple-100" : "ring-2 ring-blue-100"}
                                         />
                                         {room.unread_count > 0 && (
                                             <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold h-5 w-5 flex items-center justify-center rounded-full ring-2 ring-white animate-bounce-short">
@@ -493,21 +495,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     </div>
                                     <div className="flex-1 ml-3.5 overflow-hidden">
                                         <div className="flex justify-between items-center mb-0.5">
-                                            <span className={clsx(
-                                                "font-bold text-[15px] truncate",
-                                                activeRoomId === room.id ? (room.id === 'ai' ? "text-purple-700" : "text-blue-700") : "text-gray-900"
-                                            )}>
-                                                {room.name}
-                                            </span>
+                                            <div className="flex items-center overflow-hidden">
+                                                <span className={clsx(
+                                                    "font-bold text-[15px] truncate",
+                                                    activeRoomId === room.id ? (room.type === 'bot' ? "text-purple-700 dark:text-purple-400" : "text-blue-700 dark:text-blue-400") : "text-gray-900 dark:text-white"
+                                                )}>
+                                                    {room.name}
+                                                </span>
+                                                {room.type === 'bot' && (
+                                                    <span className="ml-1.5 px-1.5 py-0.5 text-[9px] font-bold bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded uppercase tracking-wider shrink-0">Trợ lý AI</span>
+                                                )}
+                                                {room.type === 'support' && (
+                                                    <span className="ml-1.5 px-1.5 py-0.5 text-[9px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded uppercase tracking-wider shrink-0">Hệ thống</span>
+                                                )}
+                                            </div>
                                         </div>
-                                        <p className="text-[12px] truncate font-medium text-gray-500">
-                                            {room.id === 'ai' ? 'Trợ lý thông minh LinkUp AI' : 'Hệ thống hỗ trợ 24/7'}
+                                        <p className="text-[12px] truncate font-medium text-gray-500 dark:text-gray-400">
+                                            {room.type === 'bot' ? 'Trợ lý thông minh LinkUp AI' : 'Hệ thống hỗ trợ 24/7'}
                                         </p>
                                     </div>
                                     {activeRoomId === room.id && (
                                         <div className={clsx(
                                             "w-1.5 h-1.5 rounded-full",
-                                            room.id === 'ai' ? "bg-purple-600" : "bg-blue-600"
+                                            room.type === 'bot' ? "bg-purple-600" : "bg-blue-600"
                                         )} />
                                     )}
                                 </div>
@@ -523,8 +533,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                         
                         <div className="flex flex-col space-y-0.5 px-1 pb-10">
-                            {filteredRooms.filter(r => r.id !== 'ai' && r.id !== 'help').length > 0 ? (
-                                filteredRooms.filter(r => r.id !== 'ai' && r.id !== 'help').map((room) => {
+                            {filteredRooms.filter(r => r.type !== 'bot' && r.type !== 'support').length > 0 ? (
+                                filteredRooms.filter(r => r.type !== 'bot' && r.type !== 'support').map((room) => {
                                     const isActive = activeRoomId === room.id;
                                     
                                     return (
@@ -538,8 +548,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                             className={clsx(
                                                 "w-full flex items-center px-3 py-3 rounded-2xl transition-all group relative cursor-pointer border border-transparent mx-1",
                                                 isActive 
-                                                    ? "bg-blue-50 border-blue-50 shadow-sm" 
-                                                    : "hover:bg-gray-50 active:scale-[0.98]"
+                                                    ? "bg-blue-50 dark:bg-[#1c2c4c] border-blue-50 dark:border-[#263c66] shadow-sm" 
+                                                    : "hover:bg-gray-50 dark:hover:bg-[#3a3b3c] active:scale-[0.98]"
                                             )}
                                         >
                                             <div className="relative shrink-0">
@@ -547,7 +557,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                     name={room.name} 
                                                     url={room.avatar_url} 
                                                     size="lg" 
-                                                    isOnline={room.is_online && !room.blocked_by_other && !(room.other_user_id && currentUser?.blocked_users?.includes(room.other_user_id))} 
+                                                    isBot={room.type === 'bot'}
+                                                    isOnline={room.type === 'bot' ? true : (room.is_online && !room.blocked_by_other && !(room.other_user_id && currentUser?.blocked_users?.includes(room.other_user_id)))} 
                                                 />
                                             </div>
                                             
@@ -556,10 +567,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                     <div className="flex items-center overflow-hidden">
                                                         <span className={clsx(
                                                             "truncate text-[15.5px] tracking-tight",
-                                                            isActive ? "font-bold text-blue-700" : (room.has_unread ? "font-bold text-gray-900" : "font-semibold text-gray-700")
+                                                            isActive ? "font-bold text-blue-700 dark:text-blue-400" : (room.has_unread ? "font-bold text-gray-900 dark:text-white" : "font-semibold text-gray-700 dark:text-gray-300")
                                                         )}>
                                                             {room.name}
                                                         </span>
+                                                        {room.type === 'community' && (
+                                                            <span className="ml-1.5 px-1.5 py-0.5 text-[8px] font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded uppercase tracking-wider shrink-0">Cộng đồng</span>
+                                                        )}
+                                                        {room.type === 'group' && (
+                                                            <span className="ml-1.5 px-1.5 py-0.5 text-[8px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded uppercase tracking-wider shrink-0">Nhóm kín</span>
+                                                        )}
+                                                        {room.type === 'direct' && (
+                                                            <span className="ml-1.5 px-1.5 py-0.5 text-[8px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded uppercase tracking-wider shrink-0">Cá nhân</span>
+                                                        )}
+                                                        {room.type === 'bot' && (
+                                                            <span className="ml-1.5 px-1.5 py-0.5 text-[8px] font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 rounded uppercase tracking-wider shrink-0">Trợ lý AI</span>
+                                                        )}
+                                                        {room.type === 'support' && (
+                                                            <span className="ml-1.5 px-1.5 py-0.5 text-[8px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded uppercase tracking-wider shrink-0">Hệ thống</span>
+                                                        )}
                                                         {room.is_pinned && (
                                                             <Pin size={11} className="ml-1.5 text-blue-500 fill-blue-500 shrink-0" />
                                                         )}
@@ -567,7 +593,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                     {(room.last_message_at || room.updated_at) && (
                                                         <span className={clsx(
                                                             "text-[10px] flex-shrink-0 ml-2",
-                                                            room.has_unread ? "text-blue-600 font-bold" : "text-gray-400 font-medium"
+                                                            room.has_unread ? "text-blue-600 dark:text-blue-400 font-bold" : "text-gray-400 dark:text-[#b0b3b8] font-medium"
                                                         )}>
                                                             {formatRelativeTime(room.last_message_at || room.updated_at || '')}
                                                         </span>
@@ -576,7 +602,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                 <div className="flex items-center space-x-1 overflow-hidden">
                                                     <p className={clsx(
                                                         "text-[13px] truncate flex items-center",
-                                                        isActive ? "text-blue-600 font-medium" : (room.has_unread ? "text-gray-900 font-bold" : "text-gray-400 font-medium")
+                                                        isActive ? "text-blue-600 dark:text-blue-400 font-medium" : (room.has_unread ? "text-gray-900 dark:text-white font-bold" : "text-gray-400 dark:text-[#b0b3b8] font-medium")
                                                     )}>
                                                         {typingUsers[room.id] && Object.keys(typingUsers[room.id]).length > 0 ? (
                                                             <span className="text-blue-600 font-bold italic animate-pulse">Đang soạn...</span>

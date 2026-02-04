@@ -7,6 +7,17 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      colors: {
+        dark: {
+          bg: '#18191a',
+          surface: '#242526',
+          hover: '#3a3b3c',
+          border: '#3a3b3c',
+          input: '#3a3b3c',
+          text: '#e4e6eb',
+          'text-muted': '#b0b3b8',
+        }
+      },
       keyframes: {
         'enter': {
           '0%': { transform: 'scale(0.9)', opacity: '0' },

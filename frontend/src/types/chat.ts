@@ -40,7 +40,7 @@ export interface User {
 export interface Room {
   id: string;
   name: string;
-  type: 'public' | 'private' | 'ai' | 'direct';
+  type: 'community' | 'group' | 'direct' | 'bot' | 'support';
   other_user_id?: string;
   icon?: string;
   avatar_url?: string;
