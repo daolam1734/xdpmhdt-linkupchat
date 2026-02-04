@@ -16,9 +16,9 @@ async def init_db():
     if rooms_count == 0:
         now = datetime.now(timezone.utc)
         default_rooms = [
-            {"id": "general", "name": "General", "icon": "hash", "type": "public", "updated_at": now},
-            {"id": "help", "name": "Help & Support", "icon": "help-circle", "type": "private", "is_ai_room": True, "updated_at": now},
-            {"id": "ai", "name": "AI Assistant", "icon": "bot", "type": "private", "is_ai_room": True, "updated_at": now},
+            {"id": "general", "name": "Cộng đồng LinkUp", "icon": "hash", "type": "community", "updated_at": now},
+            {"id": "help", "name": "Trung tâm Hỗ trợ", "icon": "help-circle", "type": "support", "is_ai_room": True, "updated_at": now},
+            {"id": "ai", "name": "Trợ lý LinkUp AI", "icon": "bot", "type": "bot", "is_ai_room": True, "updated_at": now},
         ]
         await db["chat_rooms"].insert_many(default_rooms)
         print("Default rooms created.")

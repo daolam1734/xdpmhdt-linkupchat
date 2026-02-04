@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build: 
@@ -21,6 +19,11 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=/api/v1
+        # Lưu ý: Với WebSocket, nếu không cấu hình domain thật thì dùng mặc định trong code
+        # Hoặc cấu hình domain cụ thể ở đây nếu cần:
+        # - VITE_WS_URL=ws://your-domain.com/api/v1
     container_name: chat_frontend
     ports:
       - "3000:80"

@@ -326,7 +326,7 @@ async def handle_send_message(user_id: str, user, data: dict):
     metadata["type"] = "message"
     metadata["message_id"] = message_id 
 
-    if room_id == "help":
+    if room_id == "help" or (room_obj and room_obj.get("type") == "support"):
         # Always send to the sender
         await manager.send_to_user(user_id, metadata)
         
@@ -345,7 +345,7 @@ async def handle_send_message(user_id: str, user, data: dict):
             }).to_list(length=100)
             for admin in admins:
                 await manager.send_to_user(admin["id"], metadata)
-    elif room_id in SELF_ISOLATED_ROOMS:
+    elif room_id in SELF_ISOLATED_ROOMS or (room_obj and room_obj.get("type") == "bot"):
         await manager.send_to_user(user_id, metadata)
     else:
         # For public/private/direct rooms, broadcast to all members
@@ -353,7 +353,7 @@ async def handle_send_message(user_id: str, user, data: dict):
         await manager.broadcast_to_room(room_id, metadata)
 
     # AI Triggers
-    is_ai_room = (room_obj and room_obj.get("is_ai_room", False)) or room_id in SELF_ISOLATED_ROOMS
+    is_ai_room = (room_obj and (room_obj.get("type") in ["bot", "support"] or room_obj.get("is_ai_room", False))) or room_id in SELF_ISOLATED_ROOMS
     content_lower = content.lower() if content else ""
     is_explicit_call = any(t in content_lower for t in ["@ai", "/ai", "@ ai", "bot ai"])
     
@@ -478,7 +478,7 @@ async def handle_send_message(user_id: str, user, data: dict):
             user_id=user_id,
             username=user.get("username"),
             ai_msg_id=ai_msg_id,
-            ai_identity="LinkUp Support" if room_id == "help" else "LinkUp Assistant",
+            ai_identity="LinkUp Support" if room_id == "help" else "LinkUp AI",
             is_suggestion_mode=False,
             is_ai_room=is_ai_room or is_explicit_call,
             user_prefs=user.get("ai_preferences"),

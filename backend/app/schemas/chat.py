@@ -4,7 +4,7 @@ from datetime import datetime
 
 class RoomBase(BaseModel):
     name: str
-    type: str = "public" # public, private, ai
+    type: str = "community" # community, group, direct, bot, support
 
 class RoomCreate(RoomBase):
     pass

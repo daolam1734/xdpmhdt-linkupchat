@@ -224,6 +224,21 @@ async def get_system_stats(
     total_messages = await db["messages"].count_documents({})
     total_rooms = await db["chat_rooms"].count_documents({})
     
+    # Thống kê phân loại (Hỗ trợ cả legacy types)
+    community_rooms = await db["chat_rooms"].count_documents({
+        "$or": [{"type": "community"}, {"id": "general"}, {"type": "public"}]
+    })
+    group_rooms = await db["chat_rooms"].count_documents({
+        "$or": [{"type": "group"}, {"type": "private"}]
+    })
+    direct_rooms = await db["chat_rooms"].count_documents({"type": "direct"})
+    bot_rooms = await db["chat_rooms"].count_documents({
+        "$or": [{"type": "bot"}, {"id": "ai"}]
+    })
+    support_rooms = await db["chat_rooms"].count_documents({
+        "$or": [{"type": "support"}, {"id": "help"}]
+    })
+    
     # Thời gian
     now = datetime.now(timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -357,12 +372,12 @@ async def get_system_stats(
     
     top_rooms = []
     for item in top_rooms_data:
-        room = await db["chat_rooms"].find_one({"_id": item["_id"] if isinstance(item["_id"], str) else str(item["_id"])})
+        room = await db["chat_rooms"].find_one({"id": item["_id"]})
         if room:
             top_rooms.append({
                 "name": room.get("name", "Unknown"),
                 "message_count": item["count"],
-                "type": room.get("type", "public")
+                "type": room.get("type", "community")
             })
 
     # Dữ liệu biểu đồ (Số tin nhắn mỗi giờ trong 24h qua)
@@ -401,6 +416,11 @@ async def get_system_stats(
         "total_admins": total_admins,
         "total_messages": total_messages,
         "total_rooms": total_rooms,
+        "community_rooms": community_rooms,
+        "group_rooms": group_rooms,
+        "direct_rooms": direct_rooms,
+        "bot_rooms": bot_rooms,
+        "support_rooms": support_rooms,
         "new_messages_24h": new_messages,
         "online_users": online_users,
         "new_users_24h": new_users_24h,
@@ -936,25 +956,73 @@ async def list_rooms_for_admin(
     cursor = db["chat_rooms"].find({})
     rooms = await cursor.to_list(length=500)
     
-    # Bổ sung thông tin số tin nhắn
+    # Bổ sung thông tin chi tiết
     results = []
     for room in rooms:
-        # Convert ObjectId if needed
         room_id = room.get("id")
+        
+        # 1. Đếm tin nhắn chính xác từ DB
         msg_count = await db["messages"].count_documents({"room_id": room_id})
         
+        # 2. Đếm báo cáo vi phạm liên quan đến phòng này
+        report_count = await db["reports"].count_documents({
+            "room_id": room_id,
+            "status": "pending"
+        })
+        
+        # 3. Đếm thành viên chính xác từ room_members collection
+        # Một số phòng cũ có thể lưu members trong mảng, một số dùng collection riêng
+        member_ids_in_room = room.get("members", [])
+        if not member_ids_in_room:
+            # Truy vấn từ collection room_members
+            cur = db["room_members"].find({"room_id": room_id}, {"user_id": 1})
+            member_docs = await cur.to_list(length=1000)
+            member_ids = [m["user_id"] for m in member_docs]
+        else:
+            member_ids = member_ids_in_room
+
+        # 3. Lấy thông tin người tạo (Owner)
+        owner_id = room.get("created_by")
+        owner_name = "Hệ thống"
+        if owner_id:
+            owner = await db["users"].find_one({"id": owner_id}, {"full_name": 1, "username": 1})
+            if owner:
+                owner_name = owner.get("full_name") or owner.get("username") or owner_id
+        elif room_id in ["general", "help", "ai"]:
+            owner_name = "Quản trị viên"
+
+        # 4. Xác định loại phòng chính xác (Xử lý các loại legacy)
+        room_type = room.get("type", "community")
+        if room_type in ["public", "private", None]:
+            if room_id == "general":
+                room_type = "community"
+            elif room_id == "help":
+                room_type = "support"
+            elif room_id == "ai":
+                room_type = "bot"
+            else:
+                # Nếu có member_count > 2 thì là group, nếu là 2 và không có flag is_group thì thường là direct
+                # Nhưng an toàn nhất là dựa vào is_private legacy
+                is_private_legacy = room.get("is_private", False) or room.get("type") == "private"
+                room_type = "group" if is_private_legacy else "community"
+
         results.append({
             "id": room_id,
             "name": room.get("name"),
             "description": room.get("description", ""),
-            "type": room.get("type", "public"),
+            "type": room_type,
             "is_private": room.get("is_private", False),
-            "created_at": room.get("created_at"),
-            "created_by": room.get("created_by"),
+            "created_at": room.get("created_at") or datetime.now(timezone.utc),
+            "created_by": owner_id or "system",
+            "owner_name": owner_name,
             "message_count": msg_count,
-            "member_count": len(room.get("members", [])),
+            "member_count": len(member_ids),
+            "report_count": report_count,
             "is_locked": room.get("is_locked", False)
         })
+    
+    # Sắp xếp theo ngày tạo mới nhất trước khi trả về
+    results.sort(key=lambda x: x["created_at"] if isinstance(x["created_at"], datetime) else datetime.fromisoformat(str(x["created_at"])) if x["created_at"] else datetime.min, reverse=True)
     
     return results
 
@@ -979,9 +1047,12 @@ async def delete_empty_rooms(
     db: AsyncIOMotorDatabase = Depends(get_db),
     current_user: dict = Depends(get_current_active_superuser)
 ):
-    """Xóa các phòng chat không có thành viên hoặc không có tin nhắn (ngoại trừ phòng hệ thống)"""
-    # Lấy các phòng không phải help/general
-    cursor = db["chat_rooms"].find({"id": {"$nin": ["general", "help"]}})
+    """Xóa các phòng chat không có thành viên hoặc không có tin nhắn (ngoại trừ phòng hệ thống và bot)"""
+    # Lấy các phòng không phải help/general và không phải kiểu community/bot/support
+    cursor = db["chat_rooms"].find({
+        "id": {"$nin": ["general", "help"]},
+        "type": {"$nin": ["community", "bot", "support"]}
+    })
     rooms = await cursor.to_list(length=1000)
     
     deleted_count = 0

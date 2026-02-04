@@ -28,7 +28,7 @@ async def get_rooms(
     is_admin = current_user.get("is_superuser") or current_user.get("role") == "admin"
     query = {
         "$or": [
-            {"type": "public"},
+            {"type": {"$in": ["community", "public"]}},
             {"id": "ai"},
             {"id": "help"}, # Mọi người đều thấy phòng Help
             {"id": {"$in": user_room_ids}}
@@ -40,6 +40,15 @@ async def get_rooms(
     # Xử lý thông tin bổ sung cho từng phòng
     final_rooms = []
     for room in rooms_list:
+        # Map legacy types to new system
+        if room["id"] == "ai":
+            room["type"] = "bot"
+        elif room["id"] == "help":
+            room["type"] = "support"
+        elif room.get("type") == "public":
+            room["type"] = "community"
+        elif room.get("type") == "private":
+            room["type"] = "group"
         # Lấy thông tin member của user hiện tại
         membership = await db["room_members"].find_one({
             "room_id": room["id"],

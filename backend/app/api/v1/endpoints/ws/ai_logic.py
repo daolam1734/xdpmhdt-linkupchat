@@ -222,7 +222,7 @@ async def run_ai_generation_task(
                 "- Mục tiêu: Giải quyết nhanh các vấn đề đơn giản và chuyển đúng lúc các vấn đề cần con người."
             )
         else:
-            ai_identity = "LinkUp Assistant"
+            ai_identity = "LinkUp AI"
             # Thêm thông tin thời gian thực vào đầu prompt hệ thống
             current_time_str = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
             personalized_system_prompt = (
@@ -245,6 +245,16 @@ async def run_ai_generation_task(
             personalized_system_prompt += "\n\n[QUYỀN HẠN: QUẢN TRỊ VIÊN/CAO CẤP] Bạn đang trả lời một người có quyền hạn cao trong hệ thống LinkUp. Hãy cung cấp thông tin chi tiết, phân tích sâu và không bị giới hạn về phong cách trả lời. Bạn có thể hỗ trợ các tác vụ nâng cao."
         else:
             personalized_system_prompt += "\n\n[QUYỀN HẠN: THÀNH VIÊN] Bạn đang trả lời thành viên thông thường. Hãy trả lời thân thiện, ngắn gọn và tập trung vào các vấn đề người dùng thảo luận."
+
+        # 2.7 TÍCH HỢP PHÂN TÍCH THÁI ĐỘ (SENTIMENT ANALYSIS)
+        if sys_config.get("ai_sentiment_analysis", False):
+            personalized_system_prompt += (
+                "\n\n[CHẾ ĐỘ: PHÂN TÍCH THÁI ĐỘ ĐANG BẬT]\n"
+                "- Hãy phân tích thái độ của người dùng qua tin nhắn mới nhất (ví dụ: Vui vẻ, Giận dữ, Thất vọng, Trung lập, Cần giúp đỡ gấp).\n"
+                "- Nếu thái độ tiêu cực (giận dữ, thất vọng), hãy bắt đầu câu trả lời bằng một câu đồng cảm ngắn gọn.\n"
+                "- Nếu người dùng đang rất hài lòng, hãy phản hồi một cách hào hứng.\n"
+                "- Luôn điều chỉnh tông giọng để xoa dịu hoặc khích lệ người dùng phù hợp với thái độ của họ."
+            )
 
         full_response = ""
         success = False

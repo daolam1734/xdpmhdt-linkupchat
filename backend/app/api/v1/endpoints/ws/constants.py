@@ -1,9 +1,13 @@
 from typing import Dict
 from datetime import datetime
 
-# --- AI Cooldown management ---
-# Stores the last time AI responded in a specific room to prevent spam
-ai_cooldowns: Dict[str, datetime] = {}
+# --- Room Classifications ---
+class RoomType:
+    COMMUNITY = "community"  # Công đồng (Public)
+    GROUP = "group"          # Nhóm kín (Private)
+    DIRECT = "direct"        # Chat 1-1
+    BOT = "bot"              # AI Assistant
+    SUPPORT = "support"      # Hỗ trợ kỹ thuật
 
 SELF_ISOLATED_ROOMS = ["ai", "help"]
 
