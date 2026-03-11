@@ -95,7 +95,7 @@ npm run dev
 ---
 
 ##  Liên hệ & Đóng góp
-Nếu bạn gặp bất kỳ lỗi nào trong quá trình chạy code, vui lòng mở **Issue** trên GitHub hoặc gửi mail về: `support@linkup.chat`.
+Nếu bạn gặp bất kỳ lỗi nào trong quá trình chạy code, vui lòng mở **Issue** trên GitHub hoặc gửi mail về: `daolam1734@gmail.com`.
 
 ---
 *LinkUp - Mang cộng đồng và trí tuệ nhân tạo lại gần nhau hơn.*
