@@ -18,10 +18,10 @@ Tạo hoặc cập nhật file `.env` tại thư mục gốc của dự án:
 
 ```dotenv
 # --- GOOGLE AI CONFIG ---
-GOOGLE_API_KEY=AIzaSyAV602gbjEiF46a5k7cPvuiuhqERzmBnnk
+GOOGLE_API_KEY=
 
 # --- MONGODB CONFIG (ATLAS) ---
-MONGODB_URL=mongodb+srv://linkup-chat:linkupchat@linkupchat.2ettabh.mongodb.net/linkupchat
+MONGODB_URL=
 MONGODB_DB=linkupchat
 
 # --- SECURITY ---

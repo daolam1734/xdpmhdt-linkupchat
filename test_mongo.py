@@ -5,7 +5,7 @@ import certifi
 import sys
 
 async def test_connection():
-    uri = "mongodb+srv://linkup-chat:linkupchat@linkupchat.2ettabh.mongodb.net/linkupchat"
+    uri = ""
     print(f"Testing connection to: {uri}")
     print(f"Python version: {sys.version}")
     
