@@ -9,9 +9,17 @@ export default defineConfig({
       '/api/v1': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+      },
+      '/ws': {
+        target: 'http://localhost:8000/api/v1',
+        changeOrigin: true,
         ws: true,
       },
       '/static': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/avatars': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },

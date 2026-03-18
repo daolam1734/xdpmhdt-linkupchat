@@ -1,8 +1,17 @@
 import os
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+# Tìm file .env ở thư mục hiện tại hoặc thư mục con 'backend'
+env_path = Path(".") / ".env"
+if not env_path.exists():
+    env_path = Path("backend") / ".env"
+
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
+else:
+    load_dotenv()
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Enterprise Chat App"

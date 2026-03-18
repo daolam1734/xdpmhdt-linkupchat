@@ -1,9 +1,11 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+// Ưu tiên dùng biến môi trường, fallback về /api/v1 (để hoạt động với proxy) 
+// hoặc localhost cho mội trường dev thuần
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
 const api = axios.create({
-    baseURL: API_BASE_URL,
+    baseURL: API_BASE_URL.startsWith('http') ? API_BASE_URL : `${window.location.origin}${API_BASE_URL}`,
     headers: {
         'Content-Type': 'application/json',
     }

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { authService } from '../services/auth.service';
 import { setAuthToken } from '../services/api';
+import { blockUser, unblockUser } from '../api/users';
 import type { User } from '../types/chat';
 
 interface AuthState {
@@ -10,17 +11,54 @@ interface AuthState {
     error: string | null;
 
     login: (username: string, password: string) => Promise<void>;
-    signup: (username: string, password: string) => Promise<void>;
+    signup: (data: { 
+        username: string; 
+        password: string;
+        email?: string;
+        full_name?: string;
+    }) => Promise<void>;
     logout: () => void;
     fetchCurrentUser: () => Promise<void>;
-    updateProfile: (data: { username?: string; avatar_url?: string; bio?: string; allow_stranger_messages?: boolean }) => Promise<void>;
+    blockUser: (userId: string) => Promise<void>;
+    unblockUser: (userId: string) => Promise<void>;
+    updateProfile: (data: { 
+        username?: string; 
+        avatar_url?: string; 
+        bio?: string; 
+        email?: string;
+        full_name?: string;
+        phone?: string;
+        password?: string;
+        allow_stranger_messages?: boolean;
+        show_online_status?: boolean;
+        ai_preferences?: {
+            preferred_style?: 'short' | 'balanced' | 'detailed';
+            coding_frequency?: 'low' | 'medium' | 'high';
+            language?: 'vi' | 'en';
+        };
+        app_settings?: {
+            theme?: 'light' | 'dark';
+            language?: 'vi' | 'en';
+            notifications?: boolean;
+            enter_to_send?: boolean;
+            profile?: {
+                work?: string;
+                education?: string;
+                location?: string;
+            };
+        };
+        ai_settings?: {
+            context_access?: boolean;
+            personalized_training?: boolean;
+        };
+    }) => Promise<void>;
     initialize: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
     token: localStorage.getItem('chat_token'),
     currentUser: null,
-    isLoading: false,
+    isLoading: !!localStorage.getItem('chat_token'),
     error: null,
 
     initialize: async () => {
@@ -44,6 +82,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             setAuthToken(access_token);
             set({ token: access_token });
             
+            // Clear chat state on login to ensure no room is auto-selected
+            localStorage.removeItem('linkup-chat-storage');
+            
             await get().fetchCurrentUser();
         } catch (error: any) {
             const msg = error.response?.data?.detail || 'Đăng nhập thất bại';
@@ -54,10 +95,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
     },
 
-    signup: async (username, password) => {
+    signup: async (data) => {
         set({ isLoading: true, error: null });
         try {
-            await authService.signup({ username, password });
+            await authService.signup(data);
         } catch (error: any) {
             const msg = error.response?.data?.detail || 'Đăng ký thất bại';
             set({ error: msg });
@@ -68,12 +109,56 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     },
 
     fetchCurrentUser: async () => {
+        set({ isLoading: true });
         try {
             const response = await authService.getMe();
             set({ currentUser: { ...response.data, isOnline: true } });
         } catch (error) {
             set({ token: null, currentUser: null });
             setAuthToken(null);
+        } finally {
+            set({ isLoading: false });
+        }
+    },
+
+    blockUser: async (userId: string) => {
+        try {
+            await blockUser(userId);
+            set(state => {
+                if (!state.currentUser) return state;
+                const blocked = state.currentUser.blocked_users || [];
+                if (!blocked.includes(userId)) {
+                    return {
+                        currentUser: {
+                            ...state.currentUser,
+                            blocked_users: [...blocked, userId]
+                        }
+                    };
+                }
+                return state;
+            });
+        } catch (error) {
+            console.error('Block failed:', error);
+            throw error;
+        }
+    },
+
+    unblockUser: async (userId: string) => {
+        try {
+            await unblockUser(userId);
+            set(state => {
+                if (!state.currentUser) return state;
+                const blocked = state.currentUser.blocked_users || [];
+                return {
+                    currentUser: {
+                        ...state.currentUser,
+                        blocked_users: blocked.filter(id => id !== userId)
+                    }
+                };
+            });
+        } catch (error) {
+            console.error('Unblock failed:', error);
+            throw error;
         }
     },
 
@@ -94,5 +179,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     logout: () => {
         setAuthToken(null);
         set({ token: null, currentUser: null });
+        // Clear active room in chat store
+        localStorage.removeItem('linkup-chat-storage');
     }
 }));

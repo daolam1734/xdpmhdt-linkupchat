@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
-import { Eye, EyeOff, CheckCircle2, MessageCircle } from 'lucide-react';
+import { Eye, EyeOff, CheckCircle2, MessageCircle, ArrowLeft } from 'lucide-react';
 
-export const AuthPage: React.FC = () => {
+interface AuthPageProps {
+    onBack?: () => void;
+}
+
+export const AuthPage: React.FC<AuthPageProps> = ({ onBack }) => {
     const [isLogin, setIsLogin] = useState(true);
     const [showPassword, setShowPassword] = useState(false);
     const [username, setUsername] = useState('');
+    const [email, setEmail] = useState('');
+    const [fullName, setFullName] = useState('');
     const [password, setPassword] = useState('');
     const [localError, setLocalError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
@@ -23,8 +29,13 @@ export const AuthPage: React.FC = () => {
             if (isLogin) {
                 await login(username, password);
             } else {
-                await signup(username, password);
-                setSuccessMsg('Đăng ký thành công! Đang đăng nhập...');
+                await signup({ 
+                    username, 
+                    password, 
+                    email: email || undefined, 
+                    full_name: fullName || undefined 
+                });
+                setSuccessMsg('Đăng ký thành công!');
                 setTimeout(async () => {
                     await login(username, password);
                 }, 1000);
@@ -36,13 +47,24 @@ export const AuthPage: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-[#F0F2F5] flex flex-col items-center justify-center p-4 font-sans">
+        <div className="min-h-screen bg-[#F0F2F5] flex flex-col items-center justify-center p-4 font-sans relative">
+            {onBack && (
+                <button 
+                    onClick={onBack}
+                    className="absolute top-8 left-8 flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors font-semibold py-2 px-4 rounded-xl hover:bg-white shadow-sm"
+                >
+                    <ArrowLeft size={20} />
+                    Quay lại trang chủ
+                </button>
+            )}
             <div className="mb-10 flex flex-col items-center">
                 <div className="w-20 h-20 bg-gradient-to-tr from-[#0064FF] to-[#00B2FF] rounded-3xl flex items-center justify-center shadow-lg shadow-blue-200 mb-4">
                     <MessageCircle size={48} className="text-white fill-white" />
                 </div>
                 <h1 className="text-4xl font-extrabold text-[#050505] tracking-tight">LinkUp</h1>
-                <p className="text-gray-500 font-medium mt-2">Nơi mọi cuộc trò chuyện bắt đầu</p>
+                <p className="text-gray-500 font-medium mt-2 text-center max-w-[400px]">
+                    LinkUp giúp cộng đồng kết nối và thảo luận hiệu quả, với AI hỗ trợ kiến thức khi được yêu cầu.
+                </p>
             </div>
 
             <div className="max-w-[400px] w-full bg-white rounded-2xl shadow-[0_12px_28px_0_rgba(0,0,0,0.2),0_2px_4px_0_rgba(0,0,0,0.1)] overflow-hidden border border-white">
@@ -77,10 +99,33 @@ export const AuthPage: React.FC = () => {
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
                                 className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#0084FF] focus:ring-4 focus:ring-blue-100 transition-all font-medium text-gray-800 placeholder:text-gray-400"
-                                placeholder="Tên người dùng hoặc email"
+                                placeholder="Tên đăng nhập"
                                 required
                             />
                         </div>
+
+                        {!isLogin && (
+                            <>
+                                <div className="relative group">
+                                    <input 
+                                        type="text" 
+                                        value={fullName}
+                                        onChange={(e) => setFullName(e.target.value)}
+                                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#0084FF] focus:ring-4 focus:ring-blue-100 transition-all font-medium text-gray-800 placeholder:text-gray-400"
+                                        placeholder="Họ và tên"
+                                    />
+                                </div>
+                                <div className="relative group">
+                                    <input 
+                                        type="email" 
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#0084FF] focus:ring-4 focus:ring-blue-100 transition-all font-medium text-gray-800 placeholder:text-gray-400"
+                                        placeholder="Địa chỉ Email"
+                                    />
+                                </div>
+                            </>
+                        )}
                         
                         <div className="relative group">
                             <input 

@@ -1,87 +1,457 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
+import { useChatStore } from '../store/useChatStore';
+import { useViewStore } from '../store/useViewStore';
 import api from '../services/api';
 import { 
-    Users, MessageSquare, Layout, ShieldAlert, 
-    ArrowLeft, Trash2, ShieldCheck, TrendingUp,
-    LogOut, MoreVertical, Search, Filter, Settings, Save, RefreshCw, Key
+    Users, MessageSquare, ShieldAlert, 
+    ArrowLeft, TrendingUp,
+    LogOut, Settings, Zap, Headset,
+    Layout
 } from 'lucide-react';
 import { Avatar } from '../components/common/Avatar';
-import { formatRelativeTime } from '../utils/time';
+import toast from 'react-hot-toast';
+import { ConfirmModal } from '../components/common/ConfirmModal';
 
-interface Stats {
-    total_users: number;
-    total_messages: number;
-    total_rooms: number;
-    new_messages_24h: number;
-    online_users: number;
-}
-
-interface User {
-    id: string;
-    username: string;
-    is_active: boolean;
-    is_superuser: boolean;
-    created_at: string;
-    avatar_url?: string;
-}
-
-interface SystemConfig {
-    google_api_key?: string;
-    openai_api_key?: string;
-}
+// Sub-components
+import type { Stats, User, SystemConfig, SupportConversation, SupportMessage, Room, Report } from './admin/types';
+import { OverviewTab } from './admin/OverviewTab';
+import { UsersTab } from './admin/UsersTab';
+import { RoomsTab } from './admin/RoomsTab';
+import { SettingsTab } from './admin/SettingsTab';
+import { SupportTab } from './admin/SupportTab';
+import { ReportsTab } from './admin/ReportsTab';
+import { AIAssistantTab } from './admin/AIAssistantTab';
+import { UserEditModal } from './admin/UserEditModal';
+import { UserAddModal } from './admin/UserAddModal';
 
 export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { currentUser, logout } = useAuthStore();
     const [stats, setStats] = useState<Stats | null>(null);
     const [users, setUsers] = useState<User[]>([]);
+    const [rooms, setRooms] = useState<Room[]>([]);
+    const [reports, setReports] = useState<Report[]>([]);
     const [config, setConfig] = useState<SystemConfig | null>(null);
+    const [restrictedUsers, setRestrictedUsers] = useState<string[]>([]);
+    const [restrictedRooms, setRestrictedRooms] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'rooms' | 'settings'>('overview');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [displaySearchTerm, setDisplaySearchTerm] = useState('');
+    const [supportSearchTerm, setSupportSearchTerm] = useState('');
+    const [displaySupportSearchTerm, setDisplaySupportSearchTerm] = useState('');
+    const [processingIds, setProcessingIds] = useState<string[]>([]);
+    const [filter, setFilter] = useState<'all' | 'active' | 'banned' | 'admin' | 'user'>('all');
+    const { adminTab: activeTab, setAdminTab: setActiveTab } = useViewStore();
+    const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+    const [editingUser, setEditingUser] = useState<User | null>(null);
+    const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+    const [showGoogleKey, setShowGoogleKey] = useState(false);
+    const [showOpenAIKey, setShowOpenAIKey] = useState(false);
+
+    // Support State
+    const [supportConversations, setSupportConversations] = useState<SupportConversation[]>([]);
+    const [selectedUser, setSelectedUser] = useState<SupportConversation | null>(null);
+    const [supportMessages, setSupportMessages] = useState<SupportMessage[]>([]);
+    const [replyContent, setReplyContent] = useState('');
+    const [sendingReply, setSendingReply] = useState(false);
+
+    const { socket } = useChatStore();
+
+    // Debounce search term
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setSearchTerm(displaySearchTerm);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [displaySearchTerm]);
 
     useEffect(() => {
-        const fetchAdminData = async () => {
+        const timer = setTimeout(() => {
+            setSupportSearchTerm(displaySupportSearchTerm);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [displaySupportSearchTerm]);
+
+    const filteredSupportConversations = useMemo(() => {
+        if (!supportSearchTerm) return supportConversations;
+        const search = supportSearchTerm.toLowerCase();
+        return supportConversations.filter(conv => 
+            conv.full_name.toLowerCase().includes(search) ||
+            conv.display_name?.toLowerCase().includes(search)
+        );
+    }, [supportConversations, supportSearchTerm]);
+
+    useEffect(() => {
+        if (activeTab !== 'support' || !socket) return;
+
+        const handleSupportMessage = (event: MessageEvent) => {
             try {
-                const [statsRes, usersRes, configRes] = await Promise.all([
-                    api.get('/admin/stats'),
-                    api.get('/admin/users'),
-                    api.get('/admin/config')
-                ]);
-                setStats(statsRes.data);
-                setUsers(usersRes.data);
-                setConfig(configRes.data);
-            } catch (error) {
-                console.error('Admin fetch error:', error);
-                alert("Bạn không có quyền truy cập trang này!");
-                onBack();
-            } finally {
-                setLoading(false);
-            }
+                const data = JSON.parse(event.data);
+                if (data.type === 'message' && data.room_id === 'help') {
+                    fetchSupportConversations();
+                    
+                    if (selectedUser && (data.sender_id === selectedUser.user_id || data.receiver_id === selectedUser.user_id)) {
+                        setSupportMessages(prev => {
+                            if (prev.some(m => m.id === data.id)) return prev;
+                            return [...prev, {
+                                id: data.id,
+                                content: data.content,
+                                sender_id: data.sender_id,
+                                sender_name: data.sender_name,
+                                is_bot: data.is_bot || false,
+                                timestamp: data.timestamp
+                            }];
+                        });
+                    }
+                }
+
+                // Xử lý cập nhật/thu hồi tin nhắn real-time
+                if (data.type === 'edit_message' && data.room_id === 'help') {
+                    setSupportMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, content: data.content, is_edited: true } : m));
+                }
+                
+                if (data.type === 'recall_message' && data.room_id === 'help') {
+                    setSupportMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, is_recalled: true, content: "Tin nhắn đã được thu hồi bởi Admin" } : m));
+                }
+            } catch (error) {}
         };
-        fetchAdminData();
+
+        socket.addEventListener('message', handleSupportMessage);
+        return () => socket.removeEventListener('message', handleSupportMessage);
+    }, [activeTab, socket, selectedUser]);
+
+    useEffect(() => {
+        if (activeTab === 'support') {
+            fetchSupportConversations();
+        }
+    }, [activeTab]);
+
+    const fetchSupportConversations = async () => {
+        try {
+            const res = await api.get('/admin/support/conversations');
+            setSupportConversations(res.data);
+        } catch (error) {
+            toast.error("Lỗi khi tải danh sách hỗ trợ");
+        }
+    };
+
+    const fetchSupportMessages = async (user: SupportConversation) => {
+        setSelectedUser(user);
+        try {
+            const res = await api.get(`/admin/support/messages/${user.user_id}`);
+            setSupportMessages(res.data);
+        } catch (error) {
+            toast.error("Lỗi khi tải tin nhắn");
+        }
+    };
+
+    const handleSendReply = async () => {
+        if (!replyContent.trim() || !selectedUser) return;
+        setSendingReply(true);
+        try {
+            await api.post('/admin/support/reply', {
+                user_id: selectedUser.user_id,
+                content: replyContent
+            });
+            setReplyContent('');
+            fetchSupportMessages(selectedUser);
+        } catch (error) {
+            toast.error("Lỗi khi gửi phản hồi");
+        } finally {
+            setSendingReply(false);
+        }
+    };
+
+    const handleUpdateSupportStatus = async (userId: string, status: string) => {
+        try {
+            await api.post(`/admin/support/thread/${userId}/status`, { status });
+            setSupportConversations(prev => prev.map(conv => 
+                conv.user_id === userId ? { ...conv, status: status as any } : conv
+            ));
+            if (selectedUser?.user_id === userId) {
+                setSelectedUser(prev => prev ? { ...prev, status: status as any } : null);
+            }
+            toast.success("Đã cập nhật trạng thái hỗ trợ");
+        } catch (error) {
+            toast.error("Lỗi khi cập nhật trạng thái");
+        }
+    };
+
+    const handleUpdateInternalNote = async (userId: string, note: string) => {
+        try {
+            await api.post(`/admin/support/thread/${userId}/note`, { note });
+            setSupportConversations(prev => prev.map(conv => 
+                conv.user_id === userId ? { ...conv, internal_note: note } : conv
+            ));
+            if (selectedUser?.user_id === userId) {
+                setSelectedUser(prev => prev ? { ...prev, internal_note: note } : null);
+            }
+            toast.success("Đã lưu ghi chú nội bộ");
+        } catch (error) {
+            toast.error("Lỗi khi lưu ghi chú");
+        }
+    };
+
+    const handleUpdateSupportMessage = async (messageId: string, content: string) => {
+        try {
+            await api.put(`/admin/support/messages/${messageId}`, { content });
+            setSupportMessages(prev => prev.map(m => m.id === messageId ? { ...m, content, is_edited: true } : m));
+            toast.success("Đã cập nhật tin nhắn");
+        } catch (error) {
+            toast.error("Lỗi khi cập nhật tin nhắn");
+        }
+    };
+
+    const handleDeleteSupportMessage = async (messageId: string) => {
+        if (!window.confirm("Bạn có chắc chắn muốn thu hồi tin nhắn này?")) return;
+        try {
+            await api.delete(`/admin/support/messages/${messageId}`);
+            setSupportMessages(prev => prev.map(m => m.id === messageId ? { ...m, is_recalled: true, content: "Tin nhắn đã được thu hồi bởi Admin" } : m));
+            toast.success("Đã thu hồi tin nhắn");
+        } catch (error) {
+            toast.error("Lỗi khi thu hồi tin nhắn");
+        }
+    };
+
+    const fetchAdminData = useCallback(async (showToast = false) => {
+        try {
+            const [statsRes, usersRes, roomsRes, reportsRes, configRes, restrictedRes] = await Promise.all([
+                api.get('/admin/stats'),
+                api.get('/admin/users'),
+                api.get('/admin/rooms'),
+                api.get('/admin/reports'),
+                api.get('/admin/config'),
+                api.get('/admin/ai/restricted-entities')
+            ]);
+            setStats(statsRes.data);
+            setUsers(usersRes.data);
+            setRooms(roomsRes.data);
+            setReports(reportsRes.data);
+            setConfig(configRes.data);
+            setRestrictedUsers(restrictedRes.data.users);
+            setRestrictedRooms(restrictedRes.data.rooms);
+            if (showToast) toast.success("Dữ liệu đã được làm mới");
+        } catch (error) {
+            console.error('Admin fetch error:', error);
+            toast.error("Lỗi khi tải dữ liệu hoặc bạn không có quyền!");
+            if (!showToast) onBack();
+        } finally {
+            setLoading(false);
+        }
     }, [onBack]);
+
+    const handleToggleUserAIRestriction = async (userId: string) => {
+        try {
+            await api.post(`/admin/users/${userId}/toggle-ai`);
+            setRestrictedUsers(prev => 
+                prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+            );
+            toast.success("Đã cập nhật hạn chế AI cho người dùng");
+        } catch (error) {
+            toast.error("Lỗi khi cập nhật hạn chế AI");
+        }
+    };
+
+    const handleToggleRoomAIRestriction = async (roomId: string) => {
+        try {
+            await api.post(`/admin/rooms/${roomId}/toggle-ai`);
+            setRestrictedRooms(prev => 
+                prev.includes(roomId) ? prev.filter(id => id !== roomId) : [...prev, roomId]
+            );
+            toast.success("Đã cập nhật hạn chế AI cho phòng chat");
+        } catch (error) {
+            toast.error("Lỗi khi cập nhật hạn chế AI");
+        }
+    };
+
+    const handleDeleteRoom = async (roomId: string) => {
+        if (roomId === 'general' || roomId === 'help') {
+            toast.error("Không thể xóa phòng mặc định của hệ thống");
+            return;
+        }
+        
+        if (window.confirm("Xác nhận xóa phòng chat này? Toàn bộ tin nhắn trong phòng sẽ bị mất vĩnh viễn.")) {
+            setProcessingIds(prev => [...prev, roomId]);
+            try {
+                await api.delete(`/admin/rooms/${roomId}`);
+                setRooms(rooms.filter(r => r.id !== roomId));
+                toast.success("Đã xóa phòng chat");
+            } catch (error) {
+                toast.error("Lỗi khi xóa phòng chat");
+            } finally {
+                setProcessingIds(prev => prev.filter(id => id !== roomId));
+            }
+        }
+    };
+
+    const handleToggleRoomLock = async (roomId: string) => {
+        setProcessingIds(prev => [...prev, roomId]);
+        try {
+            const res = await api.post(`/admin/rooms/${roomId}/toggle-lock`);
+            const newLocked = res.data.is_locked;
+            setRooms(rooms.map(r => r.id === roomId ? { ...r, is_locked: newLocked } : r));
+            toast.success(newLocked ? "Đã khóa nhóm chat" : "Đã mở khóa nhóm chat");
+        } catch (error) {
+            toast.error("Lỗi khi thay đổi trạng thái khóa");
+        } finally {
+            setProcessingIds(prev => prev.filter(id => id !== roomId));
+        }
+    };
+
+    const handleCleanupEmptyRooms = async () => {
+        if (!window.confirm("Dọn dẹp các nhóm chat không có nội dung?")) return;
+        try {
+            const res = await api.post('/admin/rooms/cleanup/empty');
+            toast.success(`Đã xóa ${res.data.deleted_count} phòng trống`);
+            fetchAdminData();
+        } catch (error) {
+            toast.error("Không thể dọn dẹp phòng");
+        }
+    };
+
+    const handleReportAction = async (reportId: string, action: string, note?: string) => {
+        try {
+            await api.post(`/admin/reports/${reportId}/action`, { action, note });
+            setReports(reports.map(r => (r.id === reportId || r._id === reportId) ? { ...r, status: 'resolved' as const, action_taken: action } : r));
+            toast.success("Đã xử lý báo cáo");
+            fetchAdminData();
+        } catch (error) {
+            toast.error("Lỗi khi xử lý báo cáo");
+        }
+    };
+
+    useEffect(() => {
+        fetchAdminData();
+        const interval = setInterval(() => {
+            if (activeTab === 'overview' && !loading) {
+                fetchAdminData();
+            }
+        }, 60000);
+        return () => clearInterval(interval);
+    }, [fetchAdminData, activeTab, loading]);
+
+    const handleManualRefresh = () => {
+        setLoading(true);
+        fetchAdminData(true);
+    };
+
+    const handleAddUser = async (userData: any) => {
+        try {
+            await api.post('/admin/users', userData);
+            toast.success('Tạo người dùng thành công');
+            setIsAddUserModalOpen(false);
+            fetchAdminData(true);
+        } catch (error: any) {
+            toast.error(error.response?.data?.detail || 'Lỗi khi tạo người dùng');
+        }
+    };
+
+    const handleExportCSV = async () => {
+        try {
+            const response = await api.get('/admin/users/export', { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `danh_sach_nguoi_dung_${new Date().toISOString().slice(0, 10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            toast.success("Đã xuất danh sách CSV");
+        } catch (error) {
+            toast.error("Lỗi khi xuất CSV");
+        }
+    };
 
     const handleSaveConfig = async () => {
         if (!config) return;
         setSaving(true);
         try {
             await api.post('/admin/config', { configs: config });
-            alert("Cập nhật cấu hình thành công! Hệ thống đã áp dụng API Key mới.");
+            toast.success("Cấu hình hệ thống đã được cập nhật thành công!");
         } catch (error) {
-            alert("Lỗi khi cập nhật cấu hình");
+            toast.error("Lỗi khi cập nhật cấu hình");
         } finally {
             setSaving(false);
         }
     };
 
-    const handleDeleteUser = async (userId: string) => {
-        if (!window.confirm("Xác nhận xóa người dùng này?")) return;
+    const confirmDeleteUser = async () => {
+        if (!deletingUserId) return;
+        setProcessingIds(prev => [...prev, deletingUserId]);
         try {
-            await api.delete(`/admin/users/${userId}`);
-            setUsers(users.filter(u => u.id !== userId));
+            await api.delete(`/admin/users/${deletingUserId}`);
+            setUsers(users.filter(u => u.id !== deletingUserId));
+            toast.success("Đã xóa người dùng");
+            setDeletingUserId(null);
         } catch (error) {
-            alert("Lỗi khi xóa người dùng");
+            toast.error("Lỗi khi xóa người dùng");
+        } finally {
+            setProcessingIds(prev => prev.filter(id => id !== deletingUserId));
+        }
+    };
+
+    const handleToggleRole = async (userId: string, currentIsAdmin: boolean) => {
+        setProcessingIds(prev => [...prev, userId]);
+        try {
+            await api.patch(`/admin/users/${userId}/role`, null, { params: { is_admin: !currentIsAdmin } });
+            setUsers(users.map(u => u.id === userId ? { ...u, is_superuser: !currentIsAdmin } : u));
+            toast.success("Cập nhật vai trò thành công!");
+        } catch (error) {
+            toast.error("Lỗi khi cập nhật vai trò");
+        } finally {
+            setProcessingIds(prev => prev.filter(id => id !== userId));
+        }
+    };
+
+    const handleToggleBan = async (userId: string) => {
+        setProcessingIds(prev => [...prev, userId]);
+        try {
+            await api.post(`/admin/users/${userId}/toggle-active`);
+            setUsers(users.map(u => u.id === userId ? { ...u, is_active: !u.is_active } : u));
+            toast.success("Đã cập nhật trạng thái hoạt động");
+        } catch (error) {
+            toast.error("Lỗi khi cập nhật trạng thái");
+        } finally {
+            setProcessingIds(prev => prev.filter(id => id !== userId));
+        }
+    };
+
+    const handleForceLogout = async (userId: string) => {
+        setProcessingIds(prev => [...prev, userId]);
+        try {
+            await api.post(`/admin/users/${userId}/force-logout`);
+            setUsers(users.map(u => u.id === userId ? { ...u, is_online: false } : u));
+            toast.success("Đã yêu cầu đăng xuất bắt buộc");
+        } catch (error) {
+            toast.error("Lỗi khi force logout");
+        } finally {
+            setProcessingIds(prev => prev.filter(id => id !== userId));
+        }
+    };
+
+    const handleResetStatus = async (userId: string) => {
+        setProcessingIds(prev => [...prev, userId]);
+        try {
+            await api.post(`/admin/users/${userId}/reset-status`);
+            setUsers(users.map(u => u.id === userId ? { ...u, is_online: false } : u));
+            toast.success("Đã reset trạng thái online");
+        } catch (error) {
+            toast.error("Lỗi khi reset trạng thái");
+        } finally {
+            setProcessingIds(prev => prev.filter(id => id !== userId));
+        }
+    };
+
+    const handleSaveUserEdit = async (data: any) => {
+        if (!editingUser) return;
+        try {
+            await api.patch(`/admin/users/${editingUser.id}/update`, data);
+            setUsers(users.map(u => u.id === editingUser.id ? { ...u, ...data } : u));
+            toast.success("Cập nhật thông tin người dùng thành công!");
+            setEditingUser(null);
+        } catch (error: any) {
+            toast.error(error.response?.data?.detail || "Lỗi khi cập nhật thông tin");
         }
     };
 
@@ -91,341 +461,207 @@ export const AdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </div>
     );
 
+    const renderTabContent = () => {
+        switch (activeTab) {
+            case 'overview':
+                return stats && (
+                    <OverviewTab 
+                        stats={stats} 
+                        loading={loading} 
+                        onManualRefresh={handleManualRefresh}
+                        onSetActiveTab={setActiveTab}
+                    />
+                );
+            case 'users':
+                return (
+                    <UsersTab 
+                        users={users}
+                        searchTerm={displaySearchTerm}
+                        filterTerm={searchTerm}
+                        filter={filter}
+                        processingIds={processingIds}
+                        onSearchChange={setDisplaySearchTerm}
+                        onFilterChange={setFilter}
+                        onRefresh={() => fetchAdminData(true)}
+                        onAddUser={() => setIsAddUserModalOpen(true)}
+                        onEditUser={setEditingUser}
+                        onToggleRole={handleToggleRole}
+                        onToggleBan={handleToggleBan}
+                        onForceLogout={handleForceLogout}
+                        onResetStatus={handleResetStatus}
+                        onDeleteUser={setDeletingUserId}
+                        onExportCSV={handleExportCSV}
+                    />
+                );
+            case 'rooms':
+                return (
+                    <RoomsTab 
+                        rooms={rooms}
+                        searchTerm={displaySearchTerm}
+                        filterTerm={searchTerm}
+                        processingIds={processingIds}
+                        onSearchChange={setDisplaySearchTerm}
+                        onRefresh={() => fetchAdminData(true)}
+                        onToggleLock={handleToggleRoomLock}
+                        onDelete={handleDeleteRoom}
+                        onCleanup={handleCleanupEmptyRooms}
+                    />
+                );
+            case 'reports':
+                return stats && (
+                    <ReportsTab 
+                        stats={stats} 
+                        reports={reports}
+                        onRefresh={() => fetchAdminData(true)}
+                        onAction={handleReportAction}
+                    />
+                );
+            case 'ai_assistant':
+                return config && stats && (
+                    <AIAssistantTab 
+                        config={config} 
+                        stats={stats}
+                        saving={saving} 
+                        restrictedUsers={restrictedUsers}
+                        restrictedRooms={restrictedRooms}
+                        onToggleUserRestriction={handleToggleUserAIRestriction}
+                        onToggleRoomRestriction={handleToggleRoomAIRestriction}
+                        onConfigChange={setConfig} 
+                        onSave={handleSaveConfig} 
+                    />
+                );
+            case 'support':
+                return (
+                    <SupportTab 
+                        conversations={filteredSupportConversations}
+                        searchTerm={displaySupportSearchTerm}
+                        onSearchChange={setDisplaySupportSearchTerm}
+                        selectedUser={selectedUser}
+                        messages={supportMessages}
+                        replyContent={replyContent}
+                        sendingReply={sendingReply}
+                        onSelectUser={fetchSupportMessages}
+                        onReplyChange={setReplyContent}
+                        onSendReply={handleSendReply}
+                        onStatusChange={handleUpdateSupportStatus}
+                        onNoteChange={handleUpdateInternalNote}
+                        onUpdateMessage={handleUpdateSupportMessage}
+                        onDeleteMessage={handleDeleteSupportMessage}
+                    />
+                );
+            case 'settings':
+                return config && (
+                    <SettingsTab 
+                        config={config} 
+                        saving={saving}
+                        showGoogleKey={showGoogleKey}
+                        showOpenAIKey={showOpenAIKey}
+                        onToggleGoogleKey={() => setShowGoogleKey(!showGoogleKey)}
+                        onToggleOpenAIKey={() => setShowOpenAIKey(!showOpenAIKey)}
+                        onConfigChange={setConfig}
+                        onSave={handleSaveConfig}
+                    />
+                );
+            default:
+                return null;
+        }
+    };
+
     return (
         <div className="min-h-screen bg-[#F8FAFC] flex font-sans">
-            {/* Sidebar */}
             <aside className="w-64 bg-[#0F172A] text-white flex flex-col shrink-0">
                 <div className="p-6 border-b border-slate-800">
                     <div className="flex items-center space-x-3">
                         <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
                             <ShieldAlert size={20} className="text-white" />
                         </div>
-                        <h1 className="text-xl font-bold tracking-tight">LinkUp Admin</h1>
+                        <h1 className="text-xl font-bold tracking-tight">LinkUp Quản trị</h1>
                     </div>
                 </div>
 
                 <nav className="flex-1 p-4 space-y-2 mt-4">
-                    <button 
-                        onClick={() => setActiveTab('overview')}
-                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'overview' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                    >
-                        <Layout size={20} />
-                        <span className="font-medium text-[15px]">Tổng quan</span>
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('users')}
-                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'users' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                    >
-                        <Users size={20} />
-                        <span className="font-medium text-[15px]">Người dùng</span>
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('rooms')}
-                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'rooms' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                    >
-                        <MessageSquare size={20} />
-                        <span className="font-medium text-[15px]">Phòng chat</span>
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('settings')}
-                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'settings' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-                    >
-                        <Settings size={20} />
-                        <span className="font-medium text-[15px]">Cấu hình hệ thống</span>
-                    </button>
+                    {[
+                        { id: 'overview', icon: Layout, label: 'Bảng điều khiển' },
+                        { id: 'users', icon: Users, label: 'Người dùng' },
+                        { id: 'rooms', icon: MessageSquare, label: 'Hội thoại' },
+                        { id: 'reports', icon: TrendingUp, label: 'Báo cáo vi phạm' },
+                        { id: 'ai_assistant', icon: Zap, label: 'Trợ lý AI' },
+                        { id: 'support', icon: Headset, label: 'Hỗ trợ trực tuyến' },
+                        { id: 'settings', icon: Settings, label: 'Cài đặt hệ thống' }
+                    ].map((tab) => (
+                        <button 
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id as any)}
+                            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+                        >
+                            <tab.icon size={20} />
+                            <span className="font-medium text-[15px]">{tab.label}</span>
+                        </button>
+                    ))}
                 </nav>
 
                 <div className="p-4 border-t border-slate-800 space-y-2">
-                    <button 
-                        onClick={onBack}
-                        className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all font-medium"
-                    >
+                    <button onClick={onBack} className="w-full h-12 flex items-center space-x-3 px-4 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all font-medium">
                         <ArrowLeft size={20} />
                         <span>Quay lại Chat</span>
                     </button>
-                    <button 
-                        onClick={logout}
-                        className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all font-medium"
-                    >
+                    <button onClick={logout} className="w-full h-12 flex items-center space-x-3 px-4 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all font-medium">
                         <LogOut size={20} />
                         <span>Đăng xuất</span>
                     </button>
                 </div>
             </aside>
 
-            {/* Main Content */}
             <main className="flex-1 overflow-y-auto">
                 <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between sticky top-0 z-10">
                     <h2 className="text-[18px] font-bold text-slate-900">
-                        {activeTab === 'overview' ? 'Bảng điều khiển hệ thống' : activeTab === 'users' ? 'Quản lý người dùng' : 'Quản lý phòng chat'}
+                        {activeTab === 'overview' ? 'Bảng điều khiển hệ thống' : 
+                         activeTab === 'users' ? 'Quản lý người dùng' : 
+                         activeTab === 'rooms' ? 'Quản lý hội thoại' :
+                         activeTab === 'reports' ? 'Báo cáo & Thống kê' :
+                         activeTab === 'ai_assistant' ? 'Cấu hình Trợ lý AI' :
+                         activeTab === 'settings' ? 'Cấu hình hệ thống' : 'Hỗ trợ khách hàng'}
                     </h2>
-
                     <div className="flex items-center space-x-4">
                         <div className="text-right">
-                            <p className="text-sm font-bold text-slate-900 leading-none">{currentUser?.username}</p>
-                            <p className="text-xs text-indigo-600 font-semibold uppercase tracking-wider mt-1">Administrator</p>
+                            <p className="text-sm font-bold text-slate-900 leading-none">{currentUser?.full_name || currentUser?.username}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">@{currentUser?.username}</p>
                         </div>
-                        <Avatar name={currentUser?.username || ''} size="md" />
+                        <Avatar name={currentUser?.full_name || currentUser?.username || ''} size="md" />
                     </div>
                 </header>
 
                 <div className="p-8">
-                    {activeTab === 'overview' && stats && (
-                        <div className="space-y-8 animate-in fade-in duration-500">
-                            {/* Stats Grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 group hover:border-indigo-500 transition-all">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div className="p-3 bg-blue-50 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                                            <Users size={24} />
-                                        </div>
-                                        <TrendingUp size={16} className="text-green-500" />
-                                    </div>
-                                    <p className="text-sm text-slate-500 font-medium">Tổng người dùng</p>
-                                    <h3 className="text-2xl font-bold text-slate-900">{stats.total_users}</h3>
-                                </div>
-
-                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 group hover:border-indigo-500 transition-all">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                                            <MessageSquare size={24} />
-                                        </div>
-                                        <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold">LIVE</span>
-                                    </div>
-                                    <p className="text-sm text-slate-500 font-medium">Tin nhắn hệ thống</p>
-                                    <h3 className="text-2xl font-bold text-slate-900">{stats.total_messages}</h3>
-                                </div>
-
-                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 group hover:border-indigo-500 transition-all">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div className="p-3 bg-purple-50 text-purple-600 rounded-xl group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                                            <Layout size={24} />
-                                        </div>
-                                    </div>
-                                    <p className="text-sm text-slate-500 font-medium">Phòng thảo luận</p>
-                                    <h3 className="text-2xl font-bold text-slate-900">{stats.total_rooms}</h3>
-                                </div>
-
-                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 group hover:border-rose-500 transition-all">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div className="p-3 bg-rose-50 text-rose-600 rounded-xl group-hover:bg-rose-600 group-hover:text-white transition-colors">
-                                            <ShieldCheck size={24} />
-                                        </div>
-                                        <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-1 rounded-full font-bold">ONLINE</span>
-                                    </div>
-                                    <p className="text-sm text-slate-500 font-medium">Đang trực tuyến</p>
-                                    <h3 className="text-2xl font-bold text-slate-900">{stats.online_users} / {stats.total_users}</h3>
-                                </div>
-                            </div>
-
-                            {/* Activity Placeholder */}
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-                                    <h4 className="font-bold text-slate-900 mb-6 flex items-center">
-                                        Hoạt động tin nhắn 24h qua
-                                        <span className="ml-3 px-2 py-1 bg-indigo-50 text-indigo-600 text-[10px] rounded-md">+{stats.new_messages_24h} mới</span>
-                                    </h4>
-                                    <div className="h-64 flex items-end justify-between space-x-2">
-                                        {[40, 70, 45, 90, 65, 80, 50, 60, 85, 40, 100, 70].map((h, i) => (
-                                            <div key={i} className="flex-1 bg-slate-100 rounded-t-lg relative group">
-                                                <div 
-                                                    className="absolute bottom-0 left-0 right-0 bg-indigo-500 rounded-t-lg transition-all duration-1000 group-hover:bg-indigo-400" 
-                                                    style={{ height: `${h}%` }}
-                                                ></div>
-                                                <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    {Math.floor(stats.total_messages * (h/100))}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="flex justify-between mt-4 text-xs text-slate-400 font-medium">
-                                        <span>00:00</span>
-                                        <span>06:00</span>
-                                        <span>12:00</span>
-                                        <span>18:00</span>
-                                        <span>23:59</span>
-                                    </div>
-                                </div>
-
-                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-                                    <h4 className="font-bold text-slate-900 mb-6">Recent Users</h4>
-                                    <div className="space-y-4">
-                                        {users.slice(0, 5).map(u => (
-                                            <div key={u.id} className="flex items-center justify-between">
-                                                <div className="flex items-center space-x-3">
-                                                    <Avatar name={u.username} size="sm" />
-                                                    <div>
-                                                        <p className="text-sm font-bold text-slate-800">{u.username}</p>
-                                                        <p className="text-[10px] text-slate-500">{formatRelativeTime(u.created_at)}</p>
-                                                    </div>
-                                                </div>
-                                                {u.is_superuser && <ShieldCheck size={14} className="text-indigo-600" />}
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <button 
-                                        onClick={() => setActiveTab('users')}
-                                        className="w-full mt-8 py-3 bg-slate-50 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-100 transition-colors"
-                                    >
-                                        Xem tất cả
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'users' && (
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in duration-300">
-                            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                                <div className="relative w-64">
-                                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                                    <input 
-                                        type="text" 
-                                        placeholder="Tìm kiếm user..." 
-                                        className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-100 transition-all font-normal"
-                                    />
-                                </div>
-                                <div className="flex space-x-2">
-                                    <button className="flex items-center space-x-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50">
-                                        <Filter size={16} />
-                                        <span>Bộ lọc</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <table className="w-full text-left">
-                                <thead className="bg-slate-50 text-slate-500 uppercase text-[11px] font-bold tracking-widest">
-                                    <tr>
-                                        <th className="px-8 py-4">Người dùng</th>
-                                        <th className="px-8 py-4">Vai trò</th>
-                                        <th className="px-8 py-4">Ngày tham gia</th>
-                                        <th className="px-8 py-4 text-right">Thao tác</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {users.map(u => (
-                                        <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
-                                            <td className="px-8 py-4">
-                                                <div className="flex items-center space-x-4">
-                                                    <Avatar name={u.username} size="md" />
-                                                    <span className="font-bold text-slate-900">{u.username}</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-4">
-                                                {u.is_superuser ? (
-                                                    <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-[11px] font-bold rounded-md border border-indigo-100">ADMIN</span>
-                                                ) : (
-                                                    <span className="px-2.5 py-1 bg-slate-100 text-slate-600 text-[11px] font-bold rounded-md border border-slate-200">USER</span>
-                                                )}
-                                            </td>
-                                            <td className="px-8 py-4 text-sm text-slate-500 font-medium">
-                                                {new Date(u.created_at).toLocaleDateString('vi-VN')}
-                                            </td>
-                                            <td className="px-8 py-4 text-right space-x-2">
-                                                <button className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
-                                                    <MoreVertical size={16} />
-                                                </button>
-                                                {!u.is_superuser && (
-                                                    <button 
-                                                        onClick={() => handleDeleteUser(u.id)}
-                                                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-
-                    {activeTab === 'settings' && config && (
-                        <div className="max-w-2xl animate-in slide-in-from-bottom-4 duration-500">
-                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                                <div className="p-8 border-b border-slate-100 flex items-center justify-between">
-                                    <div>
-                                        <h4 className="text-xl font-bold text-slate-900">Quản lý API Keys</h4>
-                                        <p className="text-sm text-slate-500 mt-1">Thay đổi cấu hình AI của toàn hệ thống LinkUp.</p>
-                                    </div>
-                                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
-                                        <Key size={24} />
-                                    </div>
-                                </div>
-                                
-                                <div className="p-8 space-y-6">
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-bold text-slate-700 flex items-center">
-                                            Google Gemini API Key
-                                            <span className="ml-2 px-1.5 py-0.5 bg-green-50 text-green-600 text-[10px] rounded uppercase">Active</span>
-                                        </label>
-                                        <div className="relative group">
-                                            <input 
-                                                type="password" 
-                                                value={config.google_api_key}
-                                                onChange={(e) => setConfig({...config, google_api_key: e.target.value})}
-                                                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all font-mono text-sm"
-                                                placeholder="AIzaSy..."
-                                            />
-                                        </div>
-                                        <p className="text-[11px] text-slate-400">Được sử dụng cho Gemini 3 Flash, Gemini 2.0 Flash.</p>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-bold text-slate-700 flex items-center">
-                                            OpenAI API Key
-                                            <span className="ml-2 px-1.5 py-0.5 bg-slate-100 text-slate-400 text-[10px] rounded uppercase">Optional</span>
-                                        </label>
-                                        <div className="relative group">
-                                            <input 
-                                                type="password" 
-                                                value={config.openai_api_key}
-                                                onChange={(e) => setConfig({...config, openai_api_key: e.target.value})}
-                                                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all font-mono text-sm"
-                                                placeholder="sk-..."
-                                            />
-                                        </div>
-                                        <p className="text-[11px] text-slate-400">Dự phòng cho các dịch vụ GPT (nếu được kích hoạt).</p>
-                                    </div>
-
-                                    <div className="pt-4 flex items-center justify-between">
-                                        <div className="flex items-center space-x-2 text-amber-600">
-                                            <RefreshCw size={14} className={saving ? "animate-spin" : ""} />
-                                            <span className="text-xs font-medium">Thay đổi sẽ có hiệu lực ngay lập tức.</span>
-                                        </div>
-                                        <button 
-                                            onClick={handleSaveConfig}
-                                            disabled={saving}
-                                            className="flex items-center space-x-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 disabled:opacity-50 disabled:shadow-none transition-all"
-                                        >
-                                            {saving ? (
-                                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            ) : (
-                                                <>
-                                                    <Save size={18} />
-                                                    <span>Lưu cấu hình</span>
-                                                </>
-                                            )}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="mt-6 p-6 bg-blue-50 rounded-2xl border border-blue-100 flex items-start space-x-4">
-                                <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
-                                    <ShieldAlert size={20} />
-                                </div>
-                                <div>
-                                    <h5 className="text-sm font-bold text-blue-900">Mẹo bảo mật</h5>
-                                    <p className="text-xs text-blue-700 mt-1 leading-relaxed">
-                                        API Key được lưu trữ mã hóa trong database. Bạn không nên chia sẻ key này cho bất kỳ ai không có quyền quản trị tối cao.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                    {renderTabContent()}
                 </div>
             </main>
+
+            {editingUser && (
+                <UserEditModal 
+                    user={editingUser} 
+                    onClose={() => setEditingUser(null)} 
+                    onSave={handleSaveUserEdit} 
+                />
+            )}
+
+            {isAddUserModalOpen && (
+                <UserAddModal 
+                    onClose={() => setIsAddUserModalOpen(false)}
+                    onSave={handleAddUser}
+                />
+            )}
+
+            <ConfirmModal 
+                isOpen={!!deletingUserId}
+                onCancel={() => setDeletingUserId(null)}
+                onConfirm={confirmDeleteUser}
+                title="Xóa người dùng"
+                message="Bạn có chắc chắn muốn xóa vĩnh viễn người dùng này? Hành động này không thể hoàn tác."
+                confirmText="Xác nhận xóa"
+                type="danger"
+            />
         </div>
     );
 };
+
+export default AdminPage;

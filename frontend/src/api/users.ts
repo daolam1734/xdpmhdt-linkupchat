@@ -3,10 +3,12 @@ import api from '../services/api';
 export interface UserSearchItem {
     id: string;
     username: string;
+    full_name?: string;
     avatar_url?: string;
     bio?: string;
     is_friend?: boolean;
     is_online?: boolean;
+    is_blocked?: boolean;
     allow_stranger_messages?: boolean;
     request_sent?: boolean;
     request_id?: string;
@@ -16,6 +18,7 @@ export interface FriendRequest {
     request_id: string;
     user_id: string;
     username: string;
+    full_name?: string;
     avatar_url?: string;
     created_at: string;
 }
@@ -30,6 +33,21 @@ export const startDirectChat = async (userId: string) => {
     return response.data;
 };
 
+export const blockUser = async (userId: string) => {
+    const response = await api.post(`/users/block/${userId}`);
+    return response.data;
+};
+
+export const unblockUser = async (userId: string) => {
+    const response = await api.post(`/users/unblock/${userId}`);
+    return response.data;
+};
+
+export const getBlockedList = async (): Promise<UserSearchItem[]> => {
+    const response = await api.get('/users/blocked-list');
+    return response.data;
+};
+
 export const sendFriendRequest = async (userId: string) => {
     const response = await api.post(`/users/friend-request/${userId}`);
     return response.data;
@@ -37,6 +55,11 @@ export const sendFriendRequest = async (userId: string) => {
 
 export const acceptFriendRequest = async (requestId: string) => {
     const response = await api.post(`/users/friend-request/${requestId}/accept`);
+    return response.data;
+};
+
+export const unfriendUser = async (userId: string) => {
+    const response = await api.post(`/users/friend-request/${userId}/unfriend`);
     return response.data;
 };
 

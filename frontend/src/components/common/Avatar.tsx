@@ -7,9 +7,20 @@ interface AvatarProps {
     isOnline?: boolean;
     isBot?: boolean;
     size?: "sm" | "md" | "lg" | "xl";
+    className?: string;
 }
 
-export const Avatar: React.FC<AvatarProps> = ({ name, url, isOnline, isBot, size = "md" }) => {
+export const Avatar: React.FC<AvatarProps> = ({ name, url, isOnline, isBot, size = "md", className }) => {
+    // Prepend backend URL if relative path
+    const getFullUrl = (path?: string) => {
+        if (!path) return path;
+        if (path.startsWith('http')) return path;
+        const backendBase = 'http://localhost:8000';
+        return `${backendBase}${path.startsWith('/') ? '' : '/'}${path}`;
+    };
+
+    const imageUrl = getFullUrl(url);
+
     const getBgColor = (text: string) => {
         const colors = [
             "bg-[#0084FF]",
@@ -40,17 +51,18 @@ export const Avatar: React.FC<AvatarProps> = ({ name, url, isOnline, isBot, size
         sm: "w-[28px] h-[28px] text-[10px]",
         md: "w-[36px] h-[36px] text-xs",
         lg: "w-[48px] h-[48px] text-[15px]",
-        xl: "w-[40px] h-[40px] text-sm"
+        xl: "w-[80px] h-[80px] text-[24px]"
     };
 
     return (
         <div className={clsx(
             "relative flex-shrink-0",
-            isBot && "p-[1.5px] rounded-full bg-gradient-to-tr from-[#833AB4] via-[#FF0080] to-[#FBBD08] shadow-md transition-transform duration-300 hover:scale-105"
+            isBot && "p-[1.5px] rounded-full bg-gradient-to-tr from-[#833AB4] via-[#FF0080] to-[#FBBD08] shadow-md transition-transform duration-300 hover:scale-105",
+            className
         )}>
-            {url ? (
+            {imageUrl ? (
                 <img 
-                    src={url} 
+                    src={imageUrl} 
                     alt={name}
                     className={clsx(
                         "rounded-full object-cover shadow-sm ring-1 ring-black/5",

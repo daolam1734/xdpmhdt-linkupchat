@@ -13,15 +13,23 @@ class MessageRead(MessageBase):
     id: str
     sender_id: Optional[str] = None
     sender_name: Optional[str] = None
+    sender_avatar: Optional[str] = None
+    receiver_id: Optional[str] = None  # Dùng cho các phòng biệt lập (AI, Help)
+    file_url: Optional[str] = None
+    file_name: Optional[str] = None
+    file_type: Optional[str] = None
     timestamp: datetime
     is_bot: bool
     is_edited: bool = False
     is_recalled: bool = False
     is_pinned: bool = False
+    is_forwarded: bool = False
+    status: Optional[str] = "sent" # sent, delivered, seen
     reply_to_id: Optional[str] = None
     reply_to_content: Optional[str] = None
     suggestions: Optional[list[str]] = None
     shared_post: Optional[dict] = None
+    reactions: Optional[dict[str, list[str]]] = None
 
     class Config:
         from_attributes = True
