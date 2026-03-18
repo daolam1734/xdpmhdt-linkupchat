@@ -41,10 +41,10 @@ cd xdpmhdt-linkupchat
 2. Tạo tệp `.env` và điền các thông tin sau:
 ```dotenv
 # Google AI Studio (Lấy tại: https://aistudio.google.com/app/apikey)
-GOOGLE_API_KEY=AIzaSy... (Key của bạn)
+GOOGLE_API_KEY=
 
 # MongoDB Atlas (Chuỗi kết nối từ Cluster của bạn)
-MONGODB_URL=mongodb+srv://<user>:<pass>@cluster.xyz.mongodb.net/linkupchat
+MONGODB_URL=
 MONGODB_DB=linkupchat
 
 # Bảo mật (Có thể để mặc định hoặc đổi chuỗi ngẫu nhiên)
